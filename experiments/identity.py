@@ -1,6 +1,5 @@
 from _context import sparse
 
-from sparse import NASLayer
 import sparse.util as util
 
 import torch, random, sys
@@ -21,6 +20,8 @@ from scipy.stats import sem
 from argparse import ArgumentParser
 
 import os
+
+print(f'CUDA is available: {torch.cuda.is_available()}')
 
 logging.basicConfig(filename='run.log',level=logging.INFO)
 LOG = logging.getLogger()
@@ -249,9 +250,10 @@ def go(arg):
 
     print('experiments finished')
 
+
 if __name__ == "__main__":
 
-    ## Parse the command line options
+    # Parse the command line options
     parser = ArgumentParser()
 
     parser.add_argument("-i", "--iterations",
