@@ -212,8 +212,9 @@ def go(arg):
                             y = model(x)
                         else:
                             y, _, _ = model(x)
-
-                        losses.append(F.mse_loss(y, x).item())
+                        validation_loss = F.mse_loss(y, x).item()
+                        losses.append(validation_loss)
+                        w.add_scalar('identity/val_loss', validation_loss, i//arg.dot_every)
 
                     results[r, i//arg.dot_every] = sum(losses)/len(losses)
 
