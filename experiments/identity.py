@@ -151,7 +151,6 @@ def go(arg):
             x = Variable(x)
 
             if not arg.reinforce:
-
                 if arg.subbatch is None:
                     optimizer.zero_grad()
 

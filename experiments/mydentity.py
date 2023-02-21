@@ -26,7 +26,9 @@ def get_model(exp_params: argparse.Namespace):
     if exp_params.reinforce:
         model = ReinforceLayer(exp_params.size, fix_values=exp_params.fix_values)
     else:
-        additional = exp_params.additional if exp_params.additional is not None else int(np.floor(np.log2(exp_params.size)) * exp_params.size)
+        additional = exp_params.additional \
+            if exp_params.additional is not None \
+            else int(np.floor(np.log2(exp_params.size)) * exp_params.size)
         model = sparse.NASLayer(
             (exp_params.size,), (exp_params.size,),
             k=exp_params.size,
@@ -142,7 +144,10 @@ def run(exp_params: argparse.Namespace):
         w = SummaryWriter(log_dir=f'./runs/identity/{r}')
         for i in trange(iterations):
             model.train(True)
-            x = torch.randn((exp_params.batch, exp_params.size))
+            x = torch.randn((exp_params.batch,) + (exp_params.size,))
+            if exp_params.cuda:
+                x = x.cuda()
+            x = torch.autograd.Variable(x)
             training_loss = _run_train_iter(model, optimizer, x)
             w.add_scalar('identity/train_loss/', training_loss, i*(r+1))
             if i % exp_params.dot_every == 0:  # Run a validation batch to see results
