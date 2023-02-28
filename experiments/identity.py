@@ -153,9 +153,7 @@ def go(arg):
             if not arg.reinforce:
                 if arg.subbatch is None:
                     optimizer.zero_grad()
-
                     y = model(x)
-
                     loss = F.mse_loss(y, x)
 
                     loss.backward()

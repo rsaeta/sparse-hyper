@@ -4,6 +4,7 @@ My implementation of the identity experiment which should help me:
 2) fix all the pep8 formatting issues driving me insane on the other version
 """
 import argparse
+import sys
 
 import numpy as np
 
@@ -97,6 +98,7 @@ def _run_train_iter(model: nn.Module,
         return _run_reinforce_train_iter(model, optimizer, x)
     else:
         if subbatch is None:
+            breakpoint()
             y = model(x)
             loss = F.mse_loss(y, x)
             loss.backward()
@@ -134,27 +136,24 @@ def run(exp_params: argparse.Namespace):
     optimizer = optim.Adam(model.parameters(), lr=exp_params.lr)
     n_dots = iterations // exp_params.dot_every
     results = np.zeros((exp_params.reps, n_dots))  # Hold the validation results during training
-    w = None
     for r in range(exp_params.reps):
-        print(f'Running repetition {r+1} of {exp_params.reps}')
-        util.makedirs(f'./identity/{r}')
-        util.makedirs(f'./runs/identity/{r}')
-        if w is not None:
-            w.close()
-        w = SummaryWriter(log_dir=f'./runs/identity/{r}')
-        for i in trange(iterations):
-            model.train(True)
-            x = torch.randn((exp_params.batch,) + (exp_params.size,))
-            if exp_params.cuda:
-                x = x.cuda()
-            x = torch.autograd.Variable(x)
-            training_loss = _run_train_iter(model, optimizer, x)
-            w.add_scalar('identity/train_loss/', training_loss, i*(r+1))
-            if i % exp_params.dot_every == 0:  # Run a validation batch to see results
-                val_losses = _run_validation(model, exp_params.size, exp_params.batch)
-                mean_val_loss = val_losses.sum().item() / val_losses.size(0)
-                results[r, i // exp_params.dot_every] = mean_val_loss
-                w.add_scalar('identity/val_loss/', mean_val_loss, (i // exp_params.dot_every) * (r + 1))
+        with SummaryWriter(log_dir=f'./runs/identity/{r}') as w:
+            print(f'Running repetition {r+1} of {exp_params.reps}')
+            util.makedirs(f'./identity/{r}')
+            util.makedirs(f'./runs/identity/{r}')
+            for i in trange(iterations):  # Training loop
+                model.train(True)
+                x = torch.randn((exp_params.batch,) + (exp_params.size,))
+                if exp_params.cuda:
+                    x = x.cuda()
+                x = torch.autograd.Variable(x)
+                training_loss = _run_train_iter(model, optimizer, x)
+                w.add_scalar('identity/train_loss/', training_loss, i*(r+1))
+                if i % exp_params.dot_every == 0:  # Run a validation batch to see results
+                    val_losses = _run_validation(model, exp_params.size, exp_params.batch)
+                    mean_val_loss = val_losses.sum().item() / val_losses.size(0)
+                    results[r, i // exp_params.dot_every] = mean_val_loss
+                    w.add_scalar('identity/val_loss/', mean_val_loss, (i // exp_params.dot_every) * (r + 1))
 
 
 class ReinforceLayer(nn.Module):
