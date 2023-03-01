@@ -24,7 +24,7 @@ from enum import Enum
 import faulthandler
 faulthandler.enable()
 # added to the sigmas to prevent NaN
-EPSILON = 10e-7
+EPSILON = 10e-5
 SIGMA_BOOST = 2.0
 
 

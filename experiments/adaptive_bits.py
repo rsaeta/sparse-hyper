@@ -200,8 +200,8 @@ def get_answers(batch: Tensor, nums: int) -> Tensor:
 
 
 def train(model: nn.Module,
-          iters: int = 100,
-          batch_size: int = 1,
+          iters: int = 1000,
+          batch_size: int = 64,
           context_len: int = 100,
           nums_to_decide: int = 6):
     optimizer = optim.Adam(lr=0.1, params=model.parameters())
@@ -210,7 +210,7 @@ def train(model: nn.Module,
         batch = torch.rand((batch_size, context_len)).round().int()
         y_hat = model(batch)
         y = get_answers(batch, nums_to_decide)[:, None]
-        loss = torch.nn.functional.nll_loss(y_hat, y.squeeze(0).long())
+        loss = torch.nn.functional.nll_loss(y_hat, y.squeeze(1).long())
         print(loss)
         loss.backward()
         optimizer.step()
