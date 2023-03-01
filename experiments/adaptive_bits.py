@@ -3,14 +3,23 @@ In this file we will explore using the adaptive sparsity for next-bit-prediction
 """
 
 import torch
-from torch import nn
+from torch import nn, Tensor, optim
 from _context import sparse
 from sparse import util
+
+from typing import Tuple
 
 
 class SparseSelfAttention(nn.Module):
     """Do I need emb? Not sure"""
-    def __init__(self, emb, context_len, k, hidden, n_heads=4, gadditional=2, nadditional=2):
+    def __init__(self,
+                 emb: int,
+                 context_len: int,
+                 k: int,
+                 hidden: int,
+                 n_heads: int = 4,
+                 gadditional: int = 2,
+                 nadditional: int = 2):
         super().__init__()
         self.n_heads = n_heads
         self.context_len = context_len
@@ -29,7 +38,7 @@ class SparseSelfAttention(nn.Module):
             nn.Linear(hidden, 2*k)  # One mean and one sigma
         )
 
-    def hyper(self, x):
+    def hyper(self, x: Tensor) -> Tuple[Tensor, Tensor, Tensor]:
         batch_size, context_len, emb = x.size()  # batch, context_len, embed_size
         assert context_len == self.context_len, f'Expected contextlen equal to {self.context_len}. Got {context_len}'
         assert emb == self.emb, f'Expected embedded equal to {self.emb}. Got {emb}'
@@ -48,7 +57,7 @@ class SparseSelfAttention(nn.Module):
         sigmas = sparse.transform_sigmas(sigmas, (context_len, ))
         return means, sigmas, values
 
-    def forward(self, x):
+    def forward(self, x: Tensor) -> Tensor:
         means, sigmas, values = self.hyper(x)
         batch, context, emb = x.size()
         rank = means.size(-1)
@@ -110,13 +119,19 @@ class SparseSelfAttention(nn.Module):
 
         out = sparse.batchmm(indices, dot, size=(context, context), xmatrix=values)
         out = out.transpose(1, 2).contiguous().view(batch, context, self.n_heads*emb)
-        breakpoint()
         return self.unify(out)
 
 
 class TransformerBlock(nn.Module):
 
-    def __init__(self, context, emb, k, heads, ff_hidden_mult=4, dropout=0.0, type='dense', ones=True, **kwargs):
+    def __init__(self,
+                 context: int,
+                 emb: int,
+                 k: int = 2,
+                 heads: int = 4,
+                 ff_hidden_mult: int = 4,
+                 dropout: float = 0.0,
+                 **kwargs):
         super().__init__()
         self.attend = SparseSelfAttention(emb, context, k, ff_hidden_mult, heads, **kwargs)
         self.dropout = nn.Dropout(dropout)
@@ -129,7 +144,7 @@ class TransformerBlock(nn.Module):
             nn.Linear(ff_hidden_mult*emb, emb)
         )
 
-    def forward(self, x):
+    def forward(self, x: Tensor) -> Tensor:
         attended = self.attend(x)
         x = self.norm1(attended + x)
         x = self.dropout(x)
@@ -139,47 +154,66 @@ class TransformerBlock(nn.Module):
         return self.dropout(x)
 
 
-class Transformer(nn.Module):
+class ClassificationTransformer(nn.Module):
 
-    def __init__(self, n_blocks, context_len, emb, *args, **kwargs):
+    def __init__(self,
+                 n_blocks: int,
+                 context_len: int,
+                 emb: int,
+                 vocab_size: int,
+                 num_classes: int,
+                 *args,
+                 **kwargs):
         super().__init__()
         self.context_len = context_len
         # Here we add 1 to emb because an additional coord is used for positional embeddings but only added
         # here in the root Transformer
-        t_blocks = [TransformerBlock(context_len, emb+1, *args, **kwargs) for _ in range(n_blocks)]
+        self.token_embedding = nn.Embedding(num_embeddings=vocab_size, embedding_dim=emb)
+        self.pos_embedding = nn.Embedding(num_embeddings=context_len, embedding_dim=emb)
+        t_blocks = [TransformerBlock(context_len, emb, *args, **kwargs) for _ in range(n_blocks)]
         self.t_blocks = nn.Sequential(*t_blocks)
-        self.to_prob = nn.Linear(1, 1)
+        self.to_prob = nn.Linear(emb, num_classes)
 
-    def pos_embed(self, x):
+    def pos_embed(self, x: Tensor) -> Tensor:
+        # Here we'll do some embedding addition
         b, c, e = x.size()
-        positions = torch.arange(self.context_len, dtype=torch.float) / self.context_len
-        positions = positions[None, :, None].expand(b, c, 1)
-        return torch.cat([x, positions], dim=2)
+        positions = self.pos_embedding(torch.arange(self.context_len, dtype=torch.int))[None, :, :].expand(b, -1, -1)
+        return positions + x
 
-    def forward(self, x):
-        x = self.pos_embed(x)
-        x = self.t_blocks(x)
-        x = self.to_prob(x)
-        return torch.nn.functional.log_softmax(x, dim=2)
+    def forward(self, x: Tensor) -> Tensor:
+        """
+        :param x: A tensor of the shape (batch, context_len)
+        """
+        x = self.token_embedding(x)  # (batch, context_len, emb)
+        x = self.pos_embed(x)  # (batch, context_len, emb)
+        x = self.t_blocks(x)  # (batch, context_len, emb)
+        # Now we need to do some pooling to reduce dimension. Hard coding to maxing for now
+        x = x.max(dim=1)[0]  # (batch, emb)
+        x = self.to_prob(x)  # (batch, num_classes)
+        x = torch.nn.functional.log_softmax(x, dim=1)  # (batch, num_classes) the probability distribution over classes
+        return x
 
 
-def get_answers(batch, nums):
-    indices = bin2dec(batch[:, -nums:], nums).float()
+def get_answers(batch: Tensor, nums: int) -> Tensor:
+    indices = bin2dec(batch[:, -nums:], nums)
     return torch.index_select(batch, 1, indices).diag()
 
 
-def train(model, iters=10, batch_size=1, context_len=100, nums_to_decide=6):
+def train(model: nn.Module,
+          iters: int = 100,
+          batch_size: int = 1,
+          context_len: int = 100,
+          nums_to_decide: int = 6):
+    optimizer = optim.Adam(lr=0.1, params=model.parameters())
     for i in range(iters):
-        batch = torch.rand((batch_size, context_len)).round()[:, :, None]
+        optimizer.zero_grad()
+        batch = torch.rand((batch_size, context_len)).round().int()
         y_hat = model(batch)
         y = get_answers(batch, nums_to_decide)[:, None]
-        print(y - y_hat)
-
-
-def dec2bin(x, bits):
-    # mask = 2 ** torch.arange(bits).to(x.device, x.dtype)
-    mask = 2 ** torch.arange(bits - 1, -1, -1).to(x.device, x.dtype)
-    return x.unsqueeze(-1).bitwise_and(mask).ne(0).float()
+        loss = torch.nn.functional.nll_loss(y_hat, y.squeeze(0).long())
+        print(loss)
+        loss.backward()
+        optimizer.step()
 
 
 def bin2dec(b, bits):
@@ -188,16 +222,18 @@ def bin2dec(b, bits):
 
 
 def get_model(*args):
-    return Transformer(*args)
+    return ClassificationTransformer(*args)
 
 
 def main():
     n_blocks = 4
     context = 200
     emb = 1
+    vocab_size = 2
+    num_classes = 2
     k = 1
     n_heads = 4
-    model = get_model(n_blocks, context, emb, k, n_heads)
+    model = get_model(n_blocks, context, emb, vocab_size, num_classes, k, n_heads)
     train(model, context_len=context)
 
 
