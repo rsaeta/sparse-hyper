@@ -226,15 +226,16 @@ def get_model(*args):
 
 
 def main():
-    n_blocks = 4
+    n_blocks = 8
     context = 200
     emb = 1
     vocab_size = 2
     num_classes = 2
-    k = 1
+    k = 4
     n_heads = 4
     model = get_model(n_blocks, context, emb, vocab_size, num_classes, k, n_heads)
     train(model, context_len=context)
+    torch.save(model.state_dict(), './adaptive_bits.pt')
 
 
 if __name__ == '__main__':
