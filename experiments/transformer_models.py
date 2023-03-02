@@ -42,7 +42,7 @@ class SparseSelfAttention(nn.Module):
 
         params = self.to_param(x)
         # Generate the logits that correspond to the horizontal coordinate of the current word
-        diags = torch.arange(context_len, dtype=torch.float)
+        diags = torch.arange(context_len, device=util.d(x), dtype=torch.float)
         diags = diags[None, :, None, None].expand(batch_size, context_len, self.k, 2)
 
         means = params[:, :, :self.k].view(batch_size, -1, self.k, 1)
@@ -103,7 +103,8 @@ class SparseSelfAttention(nn.Module):
         keys = keys / (emb ** (1/4))
 
         indices_flattened = indices.view(batch*self.n_heads*context*num_points, -1)
-        ar = torch.arange(batch*self.n_heads, dtype=torch.long)[:, None].expand(batch*self.n_heads, context*num_points)\
+        ar = torch.arange(batch*self.n_heads, device=util.d(x), dtype=torch.long)[:, None]\
+            .expand(batch*self.n_heads, context*num_points)\
             .contiguous()\
             .view(batch*self.n_heads*context*num_points)
 
@@ -173,7 +174,8 @@ class SparseTransformer(nn.Module):
         # Here we'll do some embedding addition
         x = self.token_embedding(x)
         b, c, e = x.size()
-        positions = self.pos_embedding(torch.arange(self.context_len, dtype=torch.int))[None, :, :].expand(b, -1, -1)
+        positions = self.pos_embedding(torch.arange(self.context_len, dtype=torch.int, device=util.d(x)))[None, :, :]\
+            .expand(b, -1, -1)
         return positions + x
 
     def forward(self, x: Tensor) -> Tensor:
