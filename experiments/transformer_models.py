@@ -62,7 +62,8 @@ class SparseSelfAttention(nn.Module):
                                    self.gadditional,
                                    self.nadditional,
                                    rng=(context, ),
-                                   relative_range=(2, 2))
+                                   relative_range=(2, 2),
+                                   cuda=torch.cuda.is_available())
         indices_fl = indices.float()
         # For each point (self.k), we expect to sample the 2**rank closest points from the first set of sampling,
         # then self.gadditional globally-sampled indices, and self.nadditional neighborhood-sampled indices.
