@@ -11,6 +11,10 @@ from transformer_models import GeneratingTransformer
 NUM_TOKENS = 256
 
 
+cuda = torch.cuda.is_available()
+print(f'Cuda is: {cuda}')
+
+
 def get_model():
     n_blocks = 8
     context = 200
@@ -127,6 +131,8 @@ def sample_sequence(model, seed, max_context, length=600, temperature=0.5, verbo
 def train(context_len: int = 200, batch_size: int = 16, lr: float = 0.01):
     d = f'./data/enwik8'
     model = get_model()
+    if cuda:
+        model.cuda()
     optimizer = torch.optim.Adam(lr=lr, params=model.parameters())
     instances_seen = 0
     data_train, data_val, data_test = enwik8(d)
@@ -134,6 +140,8 @@ def train(context_len: int = 200, batch_size: int = 16, lr: float = 0.01):
     for i in range(100):
         optimizer.zero_grad()
         source, target = sample_batch(data_train, length=context_len, batch_size=batch_size)
+        if cuda:
+            source, target = source.cuda(), target.cuda()
         instances_seen += source.size(0)
         output = model(source)
         loss = torch.nn.functional.nll_loss(output.transpose(2, 1), target, reduction='mean')
@@ -144,6 +152,7 @@ def train(context_len: int = 200, batch_size: int = 16, lr: float = 0.01):
 
 def main():
     train()
+
 
 if __name__ == '__main__':
     main()
