@@ -161,9 +161,10 @@ def train(args: argparse.Namespace):
             source, target = source.cuda(), target.cuda()
         instances_seen += source.size(0)
         output = model(source)
+
         loss = torch.nn.functional.nll_loss(output.transpose(2, 1), target, reduction='mean')
         wandb.log({'loss': loss.item(), 'lr': scheduler.get_last_lr()[0]})
-        print(loss)
+        print(loss, scheduler.get_last_lr()[0])
         loss.backward()
         optimizer.step()
         scheduler.step()
