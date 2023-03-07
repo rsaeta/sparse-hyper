@@ -152,7 +152,7 @@ def train(args: argparse.Namespace):
     optimizer = torch.optim.Adam(lr=args.learning_rate, params=model.parameters())
     # scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer,
     # lambda i: min(i / (args.lr_warmup / args.batch_size), 1.0))
-    scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=4, gamma=0.5)
+    scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=args.lr_stepsize, gamma=0.5)
     instances_seen = 0
     data_train, data_val, data_test = enwik8(args.data)
     data_train, data_test = (data_train, data_val)
@@ -211,6 +211,9 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument('-m', '--lr-warmup',
                         dest='lr_warmup',
                         default=5000, type=int)
+    parser.add_argument('-S', '--lr-stepsize',
+                        dest='lr_stepsize',
+                        default=10, type=int)
     options = parser.parse_args()
     print(options)
     return options
