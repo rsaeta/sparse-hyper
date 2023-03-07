@@ -162,7 +162,7 @@ def train(args: argparse.Namespace):
         instances_seen += source.size(0)
         output = model(source)
         loss = torch.nn.functional.nll_loss(output.transpose(2, 1), target, reduction='mean')
-        wandb.log({'loss': loss.item(), 'lr': scheduler.get_last_lr()})
+        wandb.log({'loss': loss.item(), 'lr': scheduler.get_last_lr()[0]})
         print(loss)
         loss.backward()
         optimizer.step()
