@@ -28,26 +28,33 @@ class SparseSelfAttention(nn.Module):
         self.to_queries = nn.Linear(emb, emb * n_heads, bias=False)
         self.to_values = nn.Linear(emb, emb * n_heads, bias=False)
         self.unify = nn.Linear(emb*n_heads, emb)
-        self.register_buffer('mvalues', torch.ones((context_len, )))
+        self.register_buffer('mvalues', torch.ones((k, )))
         self.to_param = nn.Sequential(
-            nn.Linear(emb, hidden),
+            nn.Linear(emb+1, hidden),
             nn.ReLU(),
             nn.Linear(hidden, 2*k)  # One mean and one sigma
         )
 
     def hyper(self, x: Tensor) -> Tuple[Tensor, Tensor, Tensor]:
-        batch_size, context_len, emb = x.size()  # batch, context_len, embed_size
+        batch_size, context_len, emb = x.size()
         assert context_len == self.context_len, f'Expected contextlen equal to {self.context_len}. Got {context_len}'
         assert emb == self.emb, f'Expected embedded equal to {self.emb}. Got {emb}'
 
-        params = self.to_param(x)
+        # Add positional encoding at the attention layer
+        coords = torch.arange(context_len, dtype=torch.float, device=util.d(x)) / context_len
+        coords = coords[None, :, None, ].expand(batch_size, context_len, 1)
+
+        inp = torch.cat([x, coords], dim=2)
+        params = self.to_param(inp)  # (B, C, k*2) k means and sigmas for each point (1 degree of freedom)
+
         # Generate the logits that correspond to the horizontal coordinate of the current word
         diags = torch.arange(context_len, device=util.d(x), dtype=torch.float)
-        diags = diags[None, :, None, None].expand(batch_size, context_len, self.k, 2)
+        diags = util.inv(diags, mx=context_len)
+        diags = diags[None, :, None, None].expand(batch_size, -1, self.k, 1)  # (B, C, K, 1)
 
-        means = params[:, :, :self.k].view(batch_size, -1, self.k, 1)
-        sigmas = params[:, :, self.k:].view(batch_size, -1, self.k)
-        values = self.mvalues[None, :, None].expand(batch_size, -1, self.k)
+        means = params[:, :, :self.k].view(batch_size, -1, self.k, 1)  # Single mean for current point  (B, C, K, 1)
+        sigmas = params[:, :, self.k:].view(batch_size, -1, self.k)  # (B, C, K)
+        values = self.mvalues[None, None, :].expand(batch_size, context_len, -1)  # Expand to all points (B, C, K)
 
         means = diags - torch.nn.functional.softplus(means)
         means = sparse.transform_means(means, (context_len, ))
@@ -55,31 +62,35 @@ class SparseSelfAttention(nn.Module):
         return means, sigmas, values
 
     def forward(self, x: Tensor) -> Tensor:
-        means, sigmas, values = self.hyper(x)
-        batch, context, emb = x.size()
+        means, sigmas, values = self.hyper(x)  # (B, C, k, 1); (B, C, k, 1); (B, C, k)
+        batch, context, emb = x.size()  # (B, C, E)
         rank = means.size(-1)
         indices = sparse.ngenerate(means,
                                    self.gadditional,
                                    self.nadditional,
                                    rng=(context, ),
-                                   relative_range=(2, 2),
-                                   cuda=torch.cuda.is_available())
+                                   relative_range=(2,),
+                                   cuda='cuda' in util.d(x))  # (B, C, P, 1)
         indices_fl = indices.float()
         # For each point (self.k), we expect to sample the 2**rank closest points from the first set of sampling,
         # then self.gadditional globally-sampled indices, and self.nadditional neighborhood-sampled indices.
         num_points = self.k*(2**rank+self.gadditional+self.nadditional)
-        assert indices.size() == (batch, context, num_points, 2)
-        densities = sparse.densities(indices_fl, means, sigmas).clone()
-        duplicates = util.nduplicates(indices).to(torch.bool)
-        densities[duplicates, :] = 0
+        assert indices.size() == (batch, context, num_points, 1)
+        densities = sparse.densities(indices_fl, means, sigmas).clone()  # (B, C, P, self.k)
+        duplicates = util.nduplicates(indices).to(torch.bool)  # (B, C, P) boolean mask of duplicates all-but-one
+        densities[duplicates, :] = 0  # Removes all duplicates
+
+        # Normalize densities across all K probability distributions by summing
         densities = densities / densities.sum(dim=2, keepdim=True)
-        weights = self.mvalues[None, :, None, None].expand_as(densities)
+
+        weights = values[:, :, None, :].expand_as(densities)
         weights = weights * densities
         weights = weights.sum(dim=3)  # I don't get this at all (sum out the MVNs)
 
-        # I don't get what this is doing either
-        # out = torch.arange(context)[None, :, None, None].expand(batch, -1, num_points, 1)
-        # indices = torch.cat([out, indices], dim=3)
+        # Because we have 1 degree of freedom, this adds the first index of the attention mask, while the second
+        # is generated by our hyper network
+        out = torch.arange(context)[None, :, None, None].expand(batch, -1, num_points, 1)
+        indices = torch.cat([out, indices], dim=3)
 
         # Here we expand the indicies for each head in this transformer block
         indices = indices[:, None, :, :, :].expand(-1, self.n_heads, -1, -1, -1)\
@@ -108,7 +119,6 @@ class SparseSelfAttention(nn.Module):
             .expand(batch*self.n_heads, context*num_points)\
             .contiguous()\
             .view(batch*self.n_heads*context*num_points)
-
         squeries = queries[ar, indices_flattened[:, 0], :]
         skeys = keys[ar, indices_flattened[:, 1], :]
 
