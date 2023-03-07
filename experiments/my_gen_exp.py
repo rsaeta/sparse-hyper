@@ -150,6 +150,7 @@ def train(args: argparse.Namespace):
     if cuda:
         model.cuda()
     optimizer = torch.optim.Adam(lr=args.learning_rate, params=model.parameters())
+    scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer, lambda i: min(i / (args.lr_warmup / args.batch_size), 1.0))
     instances_seen = 0
     data_train, data_val, data_test = enwik8(args.data)
     data_train, data_test = (data_train, data_val)
@@ -165,6 +166,7 @@ def train(args: argparse.Namespace):
         print(loss)
         loss.backward()
         optimizer.step()
+        scheduler.step()
 
 
 def parse_args() -> argparse.Namespace:
@@ -202,6 +204,9 @@ def parse_args() -> argparse.Namespace:
                         dest='num_indices',
                         help='Number of points in floating-point indices',
                         default=8, type=int)
+    parser.add_argument('-m', '--lr-warmup',
+                        dest='lr_warmup',
+                        default=5000, type=int)
     options = parser.parse_args()
     print(options)
     return options
