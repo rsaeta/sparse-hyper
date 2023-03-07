@@ -1,8 +1,13 @@
+import argparse
+from argparse import ArgumentParser
+
 import torch
 import torch.nn.functional as F
 import torch.distributions as dist
 import numpy as np
 import gzip
+
+import wandb
 
 from transformer_models import GeneratingTransformer
 
@@ -10,20 +15,19 @@ from transformer_models import GeneratingTransformer
 # power of two.
 NUM_TOKENS = 256
 
-
 cuda = torch.cuda.is_available()
 print(f'Cuda is: {cuda}')
 
 
-def get_model():
-    n_blocks = 8
-    context = 200
-    emb = 4
-    vocab_size = NUM_TOKENS
-    k = 4
-    n_heads = 4
-    args = [n_blocks, context, emb, vocab_size, k, n_heads]
-    return GeneratingTransformer(*args)
+def get_model(args: argparse.Namespace) -> GeneratingTransformer:
+    return GeneratingTransformer(
+        args.depth,
+        args.context,
+        args.embedding,
+        NUM_TOKENS,
+        args.num_indices,
+        args.n_heads
+    )
 
 
 def sample(lnprobs, temperature=1.0):
@@ -75,7 +79,7 @@ def sample_batch(data, length, batch_size):
     starts = torch.randint(size=(batch_size,), low=0, high=data.size(0) - length - 1)
 
     # Slice out the input sequences
-    seqs_inputs  = [data[start:start + length] for start in starts]
+    seqs_inputs = [data[start:start + length] for start in starts]
     # -- the start index is the one we just sampled, and the end is exactly 'lentgh' positions after that.
     seqs_target = [data[start + 1:start + length + 1] for start in starts]
     # -- The target is the same sequence as input, except one character ahead (we are asking the model to predict the
@@ -102,7 +106,7 @@ def sample_sequence(model, seed, max_context, length=600, temperature=0.5, verbo
 
     sequence = seed.detach().clone()
 
-    if verbose: # Print the seed, surrounded by square brackets
+    if verbose:  # Print the seed, surrounded by square brackets
         print('[', end='', flush=True)
         for c in seed:
             print(str(chr(c)), end='', flush=True)
@@ -122,36 +126,92 @@ def sample_sequence(model, seed, max_context, length=600, temperature=0.5, verbo
         if verbose:
             print(str(chr(max(32, c))), end='', flush=True)
 
-        sequence = torch.cat([sequence, c[None]], dim=0) # Append the sampled token to the sequence
+        sequence = torch.cat([sequence, c[None]], dim=0)  # Append the sampled token to the sequence
 
     print()
     return seed
 
 
-def train(context_len: int = 200, batch_size: int = 16, lr: float = 0.01):
-    d = f'./data/enwik8'
-    model = get_model()
+def init_wandb(args):
+    wandb.init(
+        project='sparse-gtransformer',
+        config={
+            'context': args.context,
+            'lr': args.learning_rate,
+            'embedding': args.embedding,
+            'depth': args.depth,
+            'k': args.num_indices,
+        }
+    )
+
+
+def train(args: argparse.Namespace):
+    model = get_model(args)
     if cuda:
         model.cuda()
-    optimizer = torch.optim.Adam(lr=lr, params=model.parameters())
+    optimizer = torch.optim.Adam(lr=args.learning_rate, params=model.parameters())
     instances_seen = 0
-    data_train, data_val, data_test = enwik8(d)
+    data_train, data_val, data_test = enwik8(args.data)
     data_train, data_test = (data_train, data_val)
-    for i in range(100):
+    for i in range(args.num_batches):
         optimizer.zero_grad()
-        source, target = sample_batch(data_train, length=context_len, batch_size=batch_size)
+        source, target = sample_batch(data_train, length=args.context, batch_size=args.batch_size)
         if cuda:
             source, target = source.cuda(), target.cuda()
         instances_seen += source.size(0)
         output = model(source)
         loss = torch.nn.functional.nll_loss(output.transpose(2, 1), target, reduction='mean')
+        wandb.log({'loss': loss.item()})
         print(loss)
         loss.backward()
         optimizer.step()
 
 
+def parse_args() -> argparse.Namespace:
+    parser = ArgumentParser()
+    parser.add_argument('-N', '--num-batches',
+                        dest='num_batches',
+                        default=1_000_000,
+                        type=int)
+    parser.add_argument('-b', '--batch-size',
+                        dest='batch_size',
+                        default=16,
+                        type=int)
+    parser.add_argument('-l', '--learning-rate',
+                        dest='learning_rate',
+                        default=0.001,
+                        type=float)
+    parser.add_argument('-D', '--data', type=str)
+    parser.add_argument('-E', '--embedding',
+                        default=4, type=int)
+    parser.add_argument('-H', '--n-heads',
+                        dest='n_heads',
+                        default=4,
+                        type=int)
+    parser.add_argument("-C", "--context",
+                        help="Length of the sequences extracted from the corpus and the context used during inference.",
+                        default=256, type=int)
+    parser.add_argument("-d", "--depth",
+                        help="Depth of the network (nr. of transformer blocks)",
+                        default=12, type=int)
+    parser.add_argument("-r", "--random-seed",
+                        dest="seed",
+                        help="RNG seed. Negative for random",
+                        default=1, type=int)
+    parser.add_argument('-k', '--num-indices',
+                        dest='num_indices',
+                        help='Number of points in floating-point indices',
+                        default=8, type=int)
+    options = parser.parse_args()
+    print(options)
+    return options
+
+
 def main():
-    train()
+    args = parse_args()
+    init_wandb(args)
+    train(args)
+    wandb.finish()
 
 
 if __name__ == '__main__':
