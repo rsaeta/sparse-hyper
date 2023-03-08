@@ -26,7 +26,9 @@ def get_model(args: argparse.Namespace) -> GeneratingTransformer:
         args.embedding,
         NUM_TOKENS,
         args.num_indices,
-        args.n_heads
+        args.n_heads,
+        nadditional=args.nadditional,
+        gadditional=args.gadditional,
     )
 
 
@@ -155,6 +157,7 @@ def train(args: argparse.Namespace):
     scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=args.lr_stepsize, gamma=0.5)
     wandb.watch(model)
     instances_seen = 0
+    tokens_seen = 0
     data_train, data_val, data_test = enwik8(args.data)
     data_train, data_test = (data_train, data_val)
     for i in range(args.num_batches):
@@ -163,10 +166,11 @@ def train(args: argparse.Namespace):
         if cuda:
             source, target = source.cuda(), target.cuda()
         instances_seen += source.size(0)
+        tokens_seen += source.size(0)*source.size(1)
         output = model(source)
 
         loss = torch.nn.functional.nll_loss(output.transpose(2, 1), target, reduction='mean')
-        to_log = {'loss': loss.item(), 'lr': scheduler.get_last_lr()[0]}
+        to_log = {'loss': loss.item(), 'lr': scheduler.get_last_lr()[0], 'tokens_seen': tokens_seen}
         print('wandblog', to_log)
         wandb.log(to_log)
         loss.backward()
@@ -215,6 +219,10 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument('-S', '--lr-stepsize',
                         dest='lr_stepsize',
                         default=10, type=int)
+    parser.add_argument('-n', '--neighbor_sample',
+                        dest='nadditional', default=2, type=int)
+    parser.add_argument('-g', '--global_sample',
+                        dest='gadditional', default=2, type=int)
     options = parser.parse_args()
     print(options)
     return options
