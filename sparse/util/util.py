@@ -628,6 +628,25 @@ def duplicates(tuples):
 
     return torch.gather(mask, 1, unsort_idx)
 
+
+def mask_(matrices, maskval=0.0, mask_diagonal=True):
+    """
+    Masks out all values in the given batch of matrices where i <= j holds,
+    i < j if mask_diagonal is false
+    In place operation
+    :param tns:
+    :return:
+
+    STOLEN FROM FORMER CODE (https://github.com/pbloem/former/blob/master/former/util/util.py#L117)
+    DONT COPYRIGHT ME
+    """
+
+    h, w = matrices.size(-2), matrices.size(-1)
+
+    indices = torch.triu_indices(h, w, offset=0 if mask_diagonal else 1)
+    matrices[..., indices[0], indices[1]] = maskval
+
+
 def nduplicates(tuples):
     """
     Takes a tensor of integer tuples, and for each tuple that occurs multiple times marks all

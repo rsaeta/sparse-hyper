@@ -181,7 +181,6 @@ def batchmm(indices, values, size, xmatrix, cuda=None):
     :param xmatrix:
     :return:
     """
-    # breakpoint()
     if cuda is None:
         cuda = indices.is_cuda
 

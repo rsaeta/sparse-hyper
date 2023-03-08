@@ -17,7 +17,8 @@ class SparseSelfAttention(nn.Module):
                  hidden: int,
                  n_heads: int = 4,
                  gadditional: int = 2,
-                 nadditional: int = 2):
+                 nadditional: int = 2,
+                 mask: bool = True):
         super().__init__()
         self.n_heads = n_heads
         self.context_len = context_len
@@ -25,6 +26,7 @@ class SparseSelfAttention(nn.Module):
         self.k = k
         self.gadditional = gadditional
         self.nadditional = nadditional
+        self.mask = mask
         self.to_keys = nn.Linear(emb, emb * n_heads, bias=False)
         self.to_queries = nn.Linear(emb, emb * n_heads, bias=False)
         self.to_values = nn.Linear(emb, emb * n_heads, bias=False)
@@ -128,7 +130,14 @@ class SparseSelfAttention(nn.Module):
         skeys = keys[ar, indices_flattened[:, 1], :]
 
         dot = torch.bmm(squeries[:, None, :], skeys[:, :, None]).view(batch * self.n_heads, context * num_points)
-        dot = sparse.logsoftmax(indices, weights * dot, (context, context)).exp()
+        # assert dot.size() == (batch * self.n_heads, context, context), \
+        #     f'Expected dot to be of size {(batch * self.n_heads, context, context)}; got {dot.size()}'
+
+        if self.mask:
+            # breakpoint()
+            util.mask_(dot, maskval=0.0, mask_diagonal=False)
+
+            dot = sparse.logsoftmax(indices, weights * dot, (context, context)).exp()
 
         out = sparse.batchmm(indices, dot, size=(context, context), xmatrix=values)
         out = out.transpose(1, 2).contiguous().view(batch, context, self.n_heads * emb)
