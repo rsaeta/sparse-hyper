@@ -33,7 +33,7 @@ class SparseSelfAttention(nn.Module):
         self.unify = nn.Linear(emb * n_heads, emb)
         self.register_buffer('mvalues', torch.ones((k,)))
         self.to_param = nn.Sequential(
-            nn.Linear(emb + 1, hidden),
+            nn.Linear(emb, hidden),
             nn.ReLU(),
             nn.Linear(hidden, 2 * k)  # One mean and one sigma
         )
@@ -44,11 +44,11 @@ class SparseSelfAttention(nn.Module):
         assert emb == self.emb, f'Expected embedded equal to {self.emb}. Got {emb}'
 
         # Add positional encoding at the attention layer
-        coords = torch.arange(context_len, dtype=torch.float, device=util.d(x)) / context_len
-        coords = coords[None, :, None, ].expand(batch_size, context_len, 1)
+        # coords = torch.arange(context_len, dtype=torch.float, device=util.d(x)) / context_len
+        # coords = coords[None, :, None, ].expand(batch_size, context_len, 1)
 
-        inp = torch.cat([x, coords], dim=2)
-        params = self.to_param(inp)  # (B, C, k*2) k means and sigmas for each point (1 degree of freedom)
+        # inp = torch.cat([x, coords], dim=2)
+        params = self.to_param(x)  # (B, C, k*2) k means and sigmas for each point (1 degree of freedom)
 
         # Generate the logits that correspond to the horizontal coordinate of the current word
         diags = torch.arange(context_len, device=util.d(x), dtype=torch.float)
@@ -128,7 +128,6 @@ class SparseSelfAttention(nn.Module):
 
         squeries = queries[ar, indices_flattened[:, 0], :]
         skeys = keys[ar, indices_flattened[:, 1], :]
-
         dot = torch.bmm(squeries[:, None, :], skeys[:, :, None]).view(batch * self.n_heads, context * num_points)
         # assert dot.size() == (batch * self.n_heads, context, context), \
         #     f'Expected dot to be of size {(batch * self.n_heads, context, context)}; got {dot.size()}'
