@@ -60,7 +60,7 @@ class SparseSelfAttention(nn.Module):
         values = self.mvalues[None, None, :].expand(batch_size, context_len, -1)  # Expand to all points (B, C, K)
 
         means = diags - torch.nn.functional.softplus(means)
-        means = sparse.transform_means(means, (context_len,))
+        means = sparse.transform_means(means, (context_len,), method='clamp')
         sigmas = sparse.transform_sigmas(sigmas, (context_len,))
         return means, sigmas, values
 
