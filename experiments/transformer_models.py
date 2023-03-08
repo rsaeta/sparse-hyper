@@ -9,6 +9,7 @@ from typing import Tuple
 
 class SparseSelfAttention(nn.Module):
     """Do I need emb? Not sure"""
+
     def __init__(self,
                  emb: int,
                  context_len: int,
@@ -27,12 +28,12 @@ class SparseSelfAttention(nn.Module):
         self.to_keys = nn.Linear(emb, emb * n_heads, bias=False)
         self.to_queries = nn.Linear(emb, emb * n_heads, bias=False)
         self.to_values = nn.Linear(emb, emb * n_heads, bias=False)
-        self.unify = nn.Linear(emb*n_heads, emb)
-        self.register_buffer('mvalues', torch.ones((k, )))
+        self.unify = nn.Linear(emb * n_heads, emb)
+        self.register_buffer('mvalues', torch.ones((k,)))
         self.to_param = nn.Sequential(
-            nn.Linear(emb+1, hidden),
+            nn.Linear(emb + 1, hidden),
             nn.ReLU(),
-            nn.Linear(hidden, 2*k)  # One mean and one sigma
+            nn.Linear(hidden, 2 * k)  # One mean and one sigma
         )
 
     def hyper(self, x: Tensor) -> Tuple[Tensor, Tensor, Tensor]:
@@ -57,24 +58,27 @@ class SparseSelfAttention(nn.Module):
         values = self.mvalues[None, None, :].expand(batch_size, context_len, -1)  # Expand to all points (B, C, K)
 
         means = diags - torch.nn.functional.softplus(means)
-        means = sparse.transform_means(means, (context_len, ))
-        sigmas = sparse.transform_sigmas(sigmas, (context_len, ))
+        means = sparse.transform_means(means, (context_len,))
+        sigmas = sparse.transform_sigmas(sigmas, (context_len,))
         return means, sigmas, values
 
     def forward(self, x: Tensor) -> Tensor:
         means, sigmas, values = self.hyper(x)  # (B, C, k, 1); (B, C, k, 1); (B, C, k)
         batch, context, emb = x.size()  # (B, C, E)
         rank = means.size(-1)
-        indices = sparse.ngenerate(means,
-                                   self.gadditional,
-                                   self.nadditional,
-                                   rng=(context, ),
-                                   relative_range=(2,),
-                                   cuda='cuda' in util.d(x))  # (B, C, P, 1)
+        indices: Tensor = sparse.ngenerate(means,
+                                           self.gadditional,
+                                           self.nadditional,
+                                           rng=(context,),
+                                           relative_range=(2,),
+                                           cuda='cuda' in util.d(x))  # (B, C, P, 1)
+        assert ((indices < 0).sum().item() == 0) and ((indices >= context).sum().item() == 0), \
+            f'Found some indices out of bounds: indices < 0: {(indices < 0).sum().item()}; ' \
+            f'indices >= {context}: {(indices >= context).sum().item()}'
         indices_fl = indices.float()
         # For each point (self.k), we expect to sample the 2**rank closest points from the first set of sampling,
         # then self.gadditional globally-sampled indices, and self.nadditional neighborhood-sampled indices.
-        num_points = self.k*(2**rank+self.gadditional+self.nadditional)
+        num_points = self.k * (2 ** rank + self.gadditional + self.nadditional)
         assert indices.size() == (batch, context, num_points, 1)
         densities = sparse.densities(indices_fl, means, sigmas).clone()  # (B, C, P, self.k)
         duplicates = util.nduplicates(indices).to(torch.bool)  # (B, C, P) boolean mask of duplicates all-but-one
@@ -93,13 +97,13 @@ class SparseSelfAttention(nn.Module):
         indices = torch.cat([out, indices], dim=3)
 
         # Here we expand the indicies for each head in this transformer block
-        indices = indices[:, None, :, :, :].expand(-1, self.n_heads, -1, -1, -1)\
-            .contiguous()\
-            .view(batch*self.n_heads, context*num_points, -1)
+        indices = indices[:, None, :, :, :].expand(-1, self.n_heads, -1, -1, -1) \
+            .contiguous() \
+            .view(batch * self.n_heads, context * num_points, -1)
 
-        weights = weights[:, None, :, :].expand(-1, self.n_heads, -1, -1)\
-            .contiguous()\
-            .view(batch*self.n_heads, context*num_points)
+        weights = weights[:, None, :, :].expand(-1, self.n_heads, -1, -1) \
+            .contiguous() \
+            .view(batch * self.n_heads, context * num_points)
 
         # Perform key, query, value transformation
         keys = self.to_keys(x).view(batch, context, self.n_heads, emb)
@@ -108,25 +112,26 @@ class SparseSelfAttention(nn.Module):
 
         # Because the KQV tensors have head dimension, we need to fold them back to single
         keys = keys.transpose(1, 2).contiguous().view(batch * self.n_heads, context, emb)
-        queries = queries.transpose(1, 2).contiguous().view(batch*self.n_heads, context, emb)
-        values = values.transpose(1, 2).contiguous().view(batch*self.n_heads, context, emb)
+        queries = queries.transpose(1, 2).contiguous().view(batch * self.n_heads, context, emb)
+        values = values.transpose(1, 2).contiguous().view(batch * self.n_heads, context, emb)
 
-        queries = queries / (emb ** (1/4))  # Normalize along the embedding dimension
-        keys = keys / (emb ** (1/4))
+        queries = queries / (emb ** (1 / 4))  # Normalize along the embedding dimension
+        keys = keys / (emb ** (1 / 4))
 
-        indices_flattened = indices.view(batch*self.n_heads*context*num_points, -1)
-        ar = torch.arange(batch*self.n_heads, device=util.d(x), dtype=torch.long)[:, None]\
-            .expand(batch*self.n_heads, context*num_points)\
-            .contiguous()\
-            .view(batch*self.n_heads*context*num_points)
+        indices_flattened = indices.view(batch * self.n_heads * context * num_points, -1)
+        ar = torch.arange(batch * self.n_heads, device=util.d(x), dtype=torch.long)[:, None] \
+            .expand(batch * self.n_heads, context * num_points) \
+            .contiguous() \
+            .view(batch * self.n_heads * context * num_points)
+
         squeries = queries[ar, indices_flattened[:, 0], :]
         skeys = keys[ar, indices_flattened[:, 1], :]
 
-        dot = torch.bmm(squeries[:, None, :], skeys[:, :, None]).view(batch*self.n_heads, context*num_points)
-        dot = sparse.logsoftmax(indices, weights*dot, (context, context)).exp()
+        dot = torch.bmm(squeries[:, None, :], skeys[:, :, None]).view(batch * self.n_heads, context * num_points)
+        dot = sparse.logsoftmax(indices, weights * dot, (context, context)).exp()
 
         out = sparse.batchmm(indices, dot, size=(context, context), xmatrix=values)
-        out = out.transpose(1, 2).contiguous().view(batch, context, self.n_heads*emb)
+        out = out.transpose(1, 2).contiguous().view(batch, context, self.n_heads * emb)
         return self.unify(out)
 
 
@@ -147,9 +152,9 @@ class TransformerBlock(nn.Module):
         self.norm2 = nn.LayerNorm(emb)
 
         self.ff = nn.Sequential(
-            nn.Linear(emb, ff_hidden_mult*emb),
+            nn.Linear(emb, ff_hidden_mult * emb),
             nn.ReLU(),
-            nn.Linear(ff_hidden_mult*emb, emb)
+            nn.Linear(ff_hidden_mult * emb, emb)
         )
 
     def forward(self, x: Tensor) -> Tensor:
@@ -158,7 +163,7 @@ class TransformerBlock(nn.Module):
         x = self.dropout(x)
 
         ff = self.ff(x)
-        x = self.norm2(ff+x)
+        x = self.norm2(ff + x)
         return self.dropout(x)
 
 
@@ -185,15 +190,15 @@ class SparseTransformer(nn.Module):
         # Here we'll do some embedding addition
         x = self.token_embedding(x)
         b, c, e = x.size()
-        positions = self.pos_embedding(torch.arange(self.context_len, dtype=torch.int, device=util.d(x)))[None, :, :]\
+        positions = self.pos_embedding(torch.arange(self.context_len, dtype=torch.int, device=util.d(x)))[None, :, :] \
             .expand(b, -1, -1)
         return positions + x
 
     def forward(self, x: Tensor) -> Tensor:
-        x = self.embed(x)  # (batch, context_len, emb)
-        x = self.t_blocks(x)  # (batch, context_len, emb)
-        x = self.post_tblocks(x)
-        return x
+        embedded = self.embed(x)  # (batch, context_len, emb)
+        t_blocked = self.t_blocks(embedded)  # (batch, context_len, emb)
+        done = self.post_tblocks(t_blocked)
+        return done
 
     def post_tblocks(self, x: Tensor) -> Tensor:
         raise NotImplementedError()
@@ -232,5 +237,5 @@ class GeneratingTransformer(SparseTransformer):
 
     def post_tblocks(self, x: Tensor) -> Tensor:
         b, c, e = x.size()  # batch, context, embed
-        x = self.to_probs(x.view(b*c, e)).view(b, c, self.vocab_size)
+        x = self.to_probs(x.view(b * c, e)).view(b, c, self.vocab_size)
         return torch.nn.functional.log_softmax(x, dim=2)
