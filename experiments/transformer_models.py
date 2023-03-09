@@ -160,7 +160,6 @@ class TransformerBlock(nn.Module):
         self.norm1 = nn.LayerNorm(emb)
         self.norm2 = nn.LayerNorm(emb)
         self.register_buffer('attn_mask', torch.tril(torch.ones(context, context)).bool())
-
         self.ff = nn.Sequential(
             nn.Linear(emb, ff_hidden_mult * emb),
             nn.ReLU(),
@@ -168,20 +167,12 @@ class TransformerBlock(nn.Module):
         )
 
     def forward(self, x: Tensor) -> Tensor:
-        # attended = self.attend(x)
-        # attended, _ = self.attend(x, x, x)
-        # breakpoint()
-        normed = self.norm1(x)
-        # normed = normed.transpose(1, 0)
-        # attended, _ = self.attend(normed, normed, normed, attn_mask=self.attn_mask)
-        attended = self.attend(normed)
+        normed1 = self.norm1(x)
+        attended = self.attend(normed1)
         x = x + attended
-        # x = self.norm1(attended + x)
         x = self.dropout(x)
-
-        # ff = self.ff(x)
-        normed = self.norm2(x)
-        x = x + self.ff(normed)
+        normed2 = self.norm2(x)
+        x = x + self.ff(normed2)
         return self.dropout(x)
 
 
