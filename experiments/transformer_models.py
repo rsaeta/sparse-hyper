@@ -4,7 +4,11 @@ from torch import nn, Tensor
 from _context import sparse
 from sparse import util
 
-from typing import Tuple, Literal
+from typing import Tuple
+try:
+    from typing import Literal
+except ImportError:
+    from typing_extensions import Literal
 
 
 class SparseSelfAttention(nn.Module):
