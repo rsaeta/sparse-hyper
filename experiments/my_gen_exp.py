@@ -29,6 +29,7 @@ def get_model(args: argparse.Namespace) -> GeneratingTransformer:
         args.n_heads,
         nadditional=args.nadditional,
         gadditional=args.gadditional,
+        attention_type=args.attention_type,
     )
 
 
@@ -236,6 +237,8 @@ def parse_args() -> argparse.Namespace:
                         dest='gadditional', default=2, type=int)
     parser.add_argument('-V', '--validation-every', default=200,
                         dest='validation_every', type=int)
+    parser.add_argument('-A', '--attention-type', choices=['dense', 'sparse'],
+                        dest='attention_type', default='dense', type=str)
     options = parser.parse_args()
     print(options)
     return options

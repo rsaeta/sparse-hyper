@@ -4,7 +4,7 @@ from torch import nn, Tensor
 from _context import sparse
 from sparse import util
 
-from typing import Tuple
+from typing import Tuple, Literal
 
 
 class SparseSelfAttention(nn.Module):
@@ -147,15 +147,20 @@ class TransformerBlock(nn.Module):
     def __init__(self,
                  context: int,
                  emb: int,
+                 attention_type: Literal['dense', 'sparse'] = 'dense',
                  k: int = 2,
                  heads: int = 4,
                  ff_hidden_mult: int = 4,
                  dropout: float = 0.0,
                  **kwargs):
         super().__init__()
-        # self.attend = SparseSelfAttention(emb, context, k, ff_hidden_mult, heads, **kwargs)
-        # self.attend = nn.MultiheadAttention(emb, heads)
-        self.attend = MultiHeadAttention(heads, emb, emb, context)
+        if attention_type == 'dense':
+            self.attend = MultiHeadAttention(heads, emb, emb, context)
+        elif attention_type == 'sparse':
+            self.attend = SparseSelfAttention(emb, context, k, ff_hidden_mult, heads, **kwargs)
+        else:
+            raise ValueError(f'attention_type {attention_type} not recognized')
+
         self.dropout = nn.Dropout(dropout)
         self.norm1 = nn.LayerNorm(emb)
         self.norm2 = nn.LayerNorm(emb)
