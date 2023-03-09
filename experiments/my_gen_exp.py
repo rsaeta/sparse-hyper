@@ -152,10 +152,9 @@ def train(args: argparse.Namespace):
     if cuda:
         model.cuda()
     optimizer = torch.optim.Adam(lr=args.learning_rate, params=model.parameters())
-    # scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer,
-    #                                               lambda i: min(i / (args.lr_warmup / args.batch_size), 1.0))
-    scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=args.lr_stepsize, gamma=0.5)
-    wandb.watch(model)
+    scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer,
+                                                  lambda i: 1.0 if i < 3500 else 0.5)
+    # scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=args.lr_stepsize, gamma=0.5)
     instances_seen = 0
     tokens_seen = 0
     data_train, data_val, data_test = enwik8(args.data)
@@ -168,7 +167,6 @@ def train(args: argparse.Namespace):
         instances_seen += source.size(0)
         tokens_seen += source.size(0)*source.size(1)
         output = model(source)
-
         loss = torch.nn.functional.nll_loss(output.transpose(2, 1), target, reduction='mean')
         to_log = {'loss': loss.item(), 'lr': scheduler.get_last_lr()[0], 'tokens_seen': tokens_seen}
         print('wandblog', to_log)

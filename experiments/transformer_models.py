@@ -133,7 +133,6 @@ class SparseSelfAttention(nn.Module):
         #     f'Expected dot to be of size {(batch * self.n_heads, context, context)}; got {dot.size()}'
 
         if self.mask:
-            # breakpoint()
             util.mask_(dot, maskval=0.0, mask_diagonal=False)
 
             dot = sparse.logsoftmax(indices, weights * dot, (context, context)).exp()
@@ -154,11 +153,13 @@ class TransformerBlock(nn.Module):
                  dropout: float = 0.0,
                  **kwargs):
         super().__init__()
-        self.attend = SparseSelfAttention(emb, context, k, ff_hidden_mult, heads, **kwargs)
+        # self.attend = SparseSelfAttention(emb, context, k, ff_hidden_mult, heads, **kwargs)
+        # self.attend = nn.MultiheadAttention(emb, heads)
+        self.attend = MultiHeadAttention(heads, emb, emb, context)
         self.dropout = nn.Dropout(dropout)
         self.norm1 = nn.LayerNorm(emb)
         self.norm2 = nn.LayerNorm(emb)
-
+        self.register_buffer('attn_mask', torch.tril(torch.ones(context, context)).bool())
         self.ff = nn.Sequential(
             nn.Linear(emb, ff_hidden_mult * emb),
             nn.ReLU(),
@@ -166,12 +167,12 @@ class TransformerBlock(nn.Module):
         )
 
     def forward(self, x: Tensor) -> Tensor:
-        attended = self.attend(x)
-        x = self.norm1(attended + x)
+        normed1 = self.norm1(x)
+        attended = self.attend(normed1)
+        x = x + attended
         x = self.dropout(x)
-
-        ff = self.ff(x)
-        x = self.norm2(ff + x)
+        normed2 = self.norm2(x)
+        x = x + self.ff(normed2)
         return self.dropout(x)
 
 
@@ -247,3 +248,48 @@ class GeneratingTransformer(SparseTransformer):
         b, c, e = x.size()  # batch, context, embed
         x = self.to_probs(x.view(b * c, e)).view(b, c, self.vocab_size)
         return torch.nn.functional.log_softmax(x, dim=2)
+
+# TAKEN FROM https://github.com/karpathy/ng-video-lecture/blob/master/gpt.py 
+class Head(nn.Module):
+    """ one head of self-attention """
+
+    def __init__(self, head_size, n_embd, block_size, dropout = 0.0):
+        super().__init__()
+        self.key = nn.Linear(n_embd, head_size, bias=False)
+        self.query = nn.Linear(n_embd, head_size, bias=False)
+        self.value = nn.Linear(n_embd, head_size, bias=False)
+        self.register_buffer('tril', torch.tril(torch.ones(block_size, block_size)))
+
+        self.dropout = nn.Dropout(dropout)
+
+    def forward(self, x):
+        # input of size (batch, time-step, channels)
+        # output of size (batch, time-step, head size)
+        B,T,C = x.shape
+        k = self.key(x)   # (B,T,hs)
+        q = self.query(x) # (B,T,hs)
+        # compute attention scores ("affinities")
+        wei = q @ k.transpose(-2,-1) * k.shape[-1]**-0.5 # (B, T, hs) @ (B, hs, T) -> (B, T, T)
+        wei = wei.masked_fill(self.tril[:T, :T] == 0, float('-inf')) # (B, T, T)
+        wei = torch.nn.functional.softmax(wei, dim=-1) # (B, T, T)
+        wei = self.dropout(wei)
+        # perform the weighted aggregation of the values
+        v = self.value(x) # (B,T,hs)
+        out = wei @ v # (B, T, T) @ (B, T, hs) -> (B, T, hs)
+        return out
+
+
+class MultiHeadAttention(nn.Module):
+    """ multiple heads of self-attention in parallel """
+
+    def __init__(self, num_heads, head_size, n_embd, block_size, dropout=0.0):
+        super().__init__()
+        self.heads = nn.ModuleList([Head(head_size, n_embd, block_size) for _ in range(num_heads)])
+        self.proj = nn.Linear(head_size * num_heads, n_embd)
+        self.dropout = nn.Dropout(dropout)
+
+    def forward(self, x):
+        out = torch.cat([h(x) for h in self.heads], dim=-1)
+        out = self.dropout(self.proj(out))
+        return out
+
