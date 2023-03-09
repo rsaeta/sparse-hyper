@@ -160,6 +160,7 @@ def train(args: argparse.Namespace):
     data_train, data_val, data_test = enwik8(args.data)
     data_train, data_test = (data_train, data_val)
     for i in range(args.num_batches):
+        model.train(True)
         optimizer.zero_grad()
         source, target = sample_batch(data_train, length=args.context, batch_size=args.batch_size)
         if cuda:
@@ -174,6 +175,18 @@ def train(args: argparse.Namespace):
         loss.backward()
         optimizer.step()
         scheduler.step()
+
+        if i % args.validation_every == 0 and i > 0:
+            model.train(False)
+            source, target = sample_batch(data_test, length=args.context, batch_size=args.batch_size)
+            if cuda:
+                source, target = source.cuda(), target.cuda()
+            instances_seen += source.size(0)
+            output = model(source)
+            loss = torch.nn.functional.nll_loss(output.transpose(2, 1), target, reduction='mean')
+            to_log = {'validation_loss': loss.item()}
+            print('wandblog', to_log)
+            wandb.log(to_log)
 
 
 def parse_args() -> argparse.Namespace:
@@ -221,6 +234,8 @@ def parse_args() -> argparse.Namespace:
                         dest='nadditional', default=2, type=int)
     parser.add_argument('-g', '--global_sample',
                         dest='gadditional', default=2, type=int)
+    parser.add_argument('-V', '--validation-every', default=200,
+                        dest='validation_every', type=int)
     options = parser.parse_args()
     print(options)
     return options
