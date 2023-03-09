@@ -198,7 +198,6 @@ class SparseTransformer(nn.Module):
         self.pos_embedding = nn.Embedding(num_embeddings=context_len, embedding_dim=emb)
         t_blocks = [TransformerBlock(context_len, emb, *args, **kwargs) for _ in range(n_blocks)]
         self.t_blocks = nn.Sequential(*t_blocks)
-        # self.to_prob = nn.Linear(emb, num_classes)
 
     def embed(self, x: Tensor) -> Tensor:
         # Here we'll do some embedding addition

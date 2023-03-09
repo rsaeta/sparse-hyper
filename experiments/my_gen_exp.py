@@ -174,6 +174,7 @@ def train(args: argparse.Namespace):
         print('wandblog', to_log)
         wandb.log(to_log)
         loss.backward()
+        torch.nn.utils.clip_grad_norm(model.parameters(), args.clipping_value)
         optimizer.step()
         scheduler.step()
 
@@ -239,6 +240,8 @@ def parse_args() -> argparse.Namespace:
                         dest='validation_every', type=int)
     parser.add_argument('-A', '--attention-type', choices=['dense', 'sparse'],
                         dest='attention_type', default='dense', type=str)
+    parser.add_argument('-C', '--clipping-value', type=float,
+                        dest='clipping_value', default=1.0)
     options = parser.parse_args()
     print(options)
     return options
