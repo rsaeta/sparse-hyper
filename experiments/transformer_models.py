@@ -47,10 +47,6 @@ class SparseSelfAttention(nn.Module):
         assert context_len == self.context_len, f'Expected contextlen equal to {self.context_len}. Got {context_len}'
         assert emb == self.emb, f'Expected embedded equal to {self.emb}. Got {emb}'
 
-        # Add positional encoding at the attention layer
-        # coords = torch.arange(context_len, dtype=torch.float, device=util.d(x)) / context_len
-        # coords = coords[None, :, None, ].expand(batch_size, context_len, 1)
-
         # inp = torch.cat([x, coords], dim=2)
         params = self.to_param(x)  # (B, C, k*2) k means and sigmas for each point (1 degree of freedom)
 
@@ -106,42 +102,55 @@ class SparseSelfAttention(nn.Module):
         indices = indices[:, None, :, :, :].expand(-1, self.n_heads, -1, -1, -1) \
             .contiguous() \
             .view(batch * self.n_heads, context * num_points, -1)
+        # Here indices has a bunch of matrices where are just lists of coordinates.
+        # One matrix for each head for the whole input
 
+        # Now expand weights (= values * densities) for each head
         weights = weights[:, None, :, :].expand(-1, self.n_heads, -1, -1) \
             .contiguous() \
             .view(batch * self.n_heads, context * num_points)
 
         # Perform key, query, value transformation
-        keys = self.to_keys(x).view(batch, context, self.n_heads, emb)
-        queries = self.to_queries(x).view(batch, context, self.n_heads, emb)
-        values = self.to_values(x).view(batch, context, self.n_heads, emb)
+        K = self.to_keys(x).view(batch, context, self.n_heads, emb)
+        Q = self.to_queries(x).view(batch, context, self.n_heads, emb)
+        V = self.to_values(x).view(batch, context, self.n_heads, emb)
 
         # Because the KQV tensors have head dimension, we need to fold them back to single
-        keys = keys.transpose(1, 2).contiguous().view(batch * self.n_heads, context, emb)
-        queries = queries.transpose(1, 2).contiguous().view(batch * self.n_heads, context, emb)
-        values = values.transpose(1, 2).contiguous().view(batch * self.n_heads, context, emb)
+        # First, transpose the head and context dimension to make it (batch, heads, context, emb)
+        # Then we just get a list of matrices of size (context, emb) which would essentially be the
+        # encoded sentences for each head, for each element in batch.
+        K = K.transpose(1, 2).contiguous().view(batch * self.n_heads, context, emb)
+        Q = Q.transpose(1, 2).contiguous().view(batch * self.n_heads, context, emb)
+        V = V.transpose(1, 2).contiguous().view(batch * self.n_heads, context, emb)
 
-        queries = queries / (emb ** (1 / 4))  # Normalize along the embedding dimension
-        keys = keys / (emb ** (1 / 4))
+        Q = Q / (emb ** (1 / 4))  # Normalize along the embedding dimension
+        K = K / (emb ** (1 / 4))
 
+        # Now this is just a list of coordinates arranged by batch,head,context
         indices_flattened = indices.view(batch * self.n_heads * context * num_points, -1)
+        # This is an array that refers the coordinates in the above tensor back to the original values in KQV matrices
         ar = torch.arange(batch * self.n_heads, device=util.d(x), dtype=torch.long)[:, None] \
             .expand(batch * self.n_heads, context * num_points) \
             .contiguous() \
             .view(batch * self.n_heads * context * num_points)
 
-        squeries = queries[ar, indices_flattened[:, 0], :]
-        skeys = keys[ar, indices_flattened[:, 1], :]
+        # It's important to note we have 1 degree of freedom (see out (torch.cat([out, indices])) was generated via
+        # torch.arange in order to have "k" points for every token in the attention matrix. This means that every
+        # element will be represented as a query. However, since indices were generated via the hyper network, the keys
+        # are actually going to sparse (80 vs 200). This is what indices_flattened[:, {0,1}] refers to.
+        # NOTE: This explodes the size of Q or K since there's a lot of repeats in ar.
+        squeries = Q[ar, indices_flattened[:, 0], :]
+        skeys = K[ar, indices_flattened[:, 1], :]
+
+        # In order to get the dot between QK for each of the elements acting as Q and K, somehow this works out
+        # to calculating that dot product in a flattened form
         dot = torch.bmm(squeries[:, None, :], skeys[:, :, None]).view(batch * self.n_heads, context * num_points)
-        # assert dot.size() == (batch * self.n_heads, context, context), \
-        #     f'Expected dot to be of size {(batch * self.n_heads, context, context)}; got {dot.size()}'
 
         if self.mask:
             util.mask_(dot, maskval=0.0, mask_diagonal=False)
+            dot = sparse.logsoftmax(indices, weights * dot, (context, context), method='naive').exp()
 
-            dot = sparse.logsoftmax(indices, weights * dot, (context, context)).exp()
-
-        out = sparse.batchmm(indices, dot, size=(context, context), xmatrix=values)
+        out = sparse.batchmm(indices, dot, size=(context, context), xmatrix=V)
         out = out.transpose(1, 2).contiguous().view(batch, context, self.n_heads * emb)
         return self.unify(out)
 
