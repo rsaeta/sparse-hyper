@@ -157,7 +157,6 @@ def train(args: argparse.Namespace):
                                                   lambda i: 1.0 if i < 3500 else 0.5)
     # scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=args.lr_stepsize, gamma=0.5)
     instances_seen = 0
-    tokens_seen = 0
     data_train, data_val, data_test = enwik8(args.data)
     data_train, data_test = (data_train, data_val)
     for i in range(args.num_batches):
@@ -167,14 +166,13 @@ def train(args: argparse.Namespace):
         if cuda:
             source, target = source.cuda(), target.cuda()
         instances_seen += source.size(0)
-        tokens_seen += source.size(0)*source.size(1)
         output = model(source)
         loss = torch.nn.functional.nll_loss(output.transpose(2, 1), target, reduction='mean')
-        to_log = {'loss': loss.item(), 'lr': scheduler.get_last_lr()[0], 'tokens_seen': tokens_seen}
+        to_log = {'loss': loss.item(), 'lr': scheduler.get_last_lr()[0]}
         print('wandblog', to_log)
         wandb.log(to_log)
         loss.backward()
-        torch.nn.utils.clip_grad_norm(model.parameters(), args.clipping_value)
+        torch.nn.utils.clip_grad_norm_(model.parameters(), args.clipping_value)
         optimizer.step()
         scheduler.step()
 
@@ -240,7 +238,7 @@ def parse_args() -> argparse.Namespace:
                         dest='validation_every', type=int)
     parser.add_argument('-A', '--attention-type', choices=['dense', 'sparse'],
                         dest='attention_type', default='dense', type=str)
-    parser.add_argument('-C', '--clipping-value', type=float,
+    parser.add_argument('-L', '--clipping-value', type=float,
                         dest='clipping_value', default=1.0)
     options = parser.parse_args()
     print(options)
