@@ -164,11 +164,9 @@ def train(args: argparse.Namespace):
         source, target = sample_batch(data_train, length=args.context, batch_size=args.batch_size)
         if cuda:
             source, target = source.cuda(), target.cuda()
-        # breakpoint()
         instances_seen += source.size(0)
         tokens_seen += source.size(0)*source.size(1)
         output = model(source)
-        # breakpoint()
         loss = torch.nn.functional.nll_loss(output.transpose(2, 1), target, reduction='mean')
         to_log = {'loss': loss.item(), 'lr': scheduler.get_last_lr()[0], 'tokens_seen': tokens_seen}
         print('wandblog', to_log)
