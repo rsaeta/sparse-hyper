@@ -147,11 +147,11 @@ class TransformerBlock(nn.Module):
     def __init__(self,
                  context: int,
                  emb: int,
-                 attention_type: Literal['dense', 'sparse'] = 'dense',
                  k: int = 2,
                  heads: int = 4,
                  ff_hidden_mult: int = 4,
                  dropout: float = 0.0,
+                 attention_type: Literal['dense', 'sparse'] = 'dense',
                  **kwargs):
         super().__init__()
         if attention_type == 'dense':
