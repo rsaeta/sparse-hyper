@@ -133,7 +133,6 @@ class SparseSelfAttention(nn.Module):
         #     f'Expected dot to be of size {(batch * self.n_heads, context, context)}; got {dot.size()}'
 
         if self.mask:
-            # breakpoint()
             util.mask_(dot, maskval=0.0, mask_diagonal=False)
 
             dot = sparse.logsoftmax(indices, weights * dot, (context, context)).exp()
@@ -154,7 +153,9 @@ class TransformerBlock(nn.Module):
                  dropout: float = 0.0,
                  **kwargs):
         super().__init__()
-        self.attend = SparseSelfAttention(emb, context, k, ff_hidden_mult, heads, **kwargs)
+        # self.attend = SparseSelfAttention(emb, context, k, ff_hidden_mult, heads, **kwargs)
+        self.attend = nn.MultiheadAttention(emb, heads)
+        # self.attend = MultiHeadAttention(heads, emb, emb, context)
         self.dropout = nn.Dropout(dropout)
         self.norm1 = nn.LayerNorm(emb)
         self.norm2 = nn.LayerNorm(emb)
@@ -166,12 +167,17 @@ class TransformerBlock(nn.Module):
         )
 
     def forward(self, x: Tensor) -> Tensor:
-        attended = self.attend(x)
-        x = self.norm1(attended + x)
+        # attended = self.attend(x)
+        # attended, _ = self.attend(x, x, x)
+        normed = self.norm1(x)
+        attended, _ = self.attend(normed, normed, normed)
+        x = x + attended
+        # x = self.norm1(attended + x)
         x = self.dropout(x)
 
-        ff = self.ff(x)
-        x = self.norm2(ff + x)
+        # ff = self.ff(x)
+        normed = self.norm2(x)
+        x = x + self.ff(normed)
         return self.dropout(x)
 
 
