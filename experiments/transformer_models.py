@@ -13,13 +13,13 @@ except ImportError:
 
 
 class SparseSelfAttention(nn.Module):
-    """Do I need emb? Not sure"""
 
     def __init__(self,
                  emb: int,
                  context_len: int,
-                 k: int,
-                 hidden: int,
+                 *,
+                 k: int = 8,
+                 hidden: int = 4,
                  n_heads: int = 4,
                  gadditional: int = 2,
                  nadditional: int = 2,
@@ -161,7 +161,6 @@ class TransformerBlock(nn.Module):
     def __init__(self,
                  context: int,
                  emb: int,
-                 k: int = 2,
                  heads: int = 4,
                  ff_hidden_mult: int = 4,
                  dropout: float = 0.0,
@@ -171,7 +170,7 @@ class TransformerBlock(nn.Module):
         if attention_type == 'dense':
             self.attend = MultiHeadAttention(heads, emb, emb, context)
         elif attention_type == 'sparse':
-            self.attend = SparseSelfAttention(emb, context, k, ff_hidden_mult, heads, **kwargs)
+            self.attend = SparseSelfAttention(emb, context, n_heads=heads, **kwargs)
         else:
             raise ValueError(f'attention_type {attention_type} not recognized')
 
