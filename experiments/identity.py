@@ -1,6 +1,5 @@
 from _context import sparse
 
-from sparse import NASLayer
 import sparse.util as util
 
 import torch, random, sys
@@ -21,6 +20,8 @@ from scipy.stats import sem
 from argparse import ArgumentParser
 
 import os
+
+print(f'CUDA is available: {torch.cuda.is_available()}')
 
 logging.basicConfig(filename='run.log',level=logging.INFO)
 LOG = logging.getLogger()
@@ -150,12 +151,9 @@ def go(arg):
             x = Variable(x)
 
             if not arg.reinforce:
-
                 if arg.subbatch is None:
                     optimizer.zero_grad()
-
                     y = model(x)
-
                     loss = F.mse_loss(y, x)
 
                     loss.backward()
@@ -211,8 +209,9 @@ def go(arg):
                             y = model(x)
                         else:
                             y, _, _ = model(x)
-
-                        losses.append(F.mse_loss(y, x).item())
+                        validation_loss = F.mse_loss(y, x).item()
+                        losses.append(validation_loss)
+                        w.add_scalar('identity/val_loss', validation_loss, i//arg.dot_every)
 
                     results[r, i//arg.dot_every] = sum(losses)/len(losses)
 
@@ -249,9 +248,10 @@ def go(arg):
 
     print('experiments finished')
 
+
 if __name__ == "__main__":
 
-    ## Parse the command line options
+    # Parse the command line options
     parser = ArgumentParser()
 
     parser.add_argument("-i", "--iterations",

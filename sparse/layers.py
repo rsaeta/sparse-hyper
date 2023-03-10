@@ -21,8 +21,10 @@ import numpy as np
 
 from enum import Enum
 
+import faulthandler
+faulthandler.enable()
 # added to the sigmas to prevent NaN
-EPSILON = 10e-7
+EPSILON = 10e-4
 SIGMA_BOOST = 2.0
 
 
@@ -281,8 +283,13 @@ class SparseLayer(nn.Module):
                 # These should not get a gradient, since their means aren't being sampled for
                 # (their gradient will be computed in other passes)
                 means_out, sigmas_out, values_out = means_out.detach(), sigmas_out.detach(), values_out.detach()
-
-            indices = generate_integer_tuples(means, self.gadditional, self.radditional, rng=subrange, relative_range=self.region, seed=seed, cuda=self.is_cuda())
+            indices = generate_integer_tuples(means,
+                                              self.gadditional,
+                                              self.radditional,
+                                              rng=subrange,
+                                              relative_range=self.region,
+                                              seed=seed,
+                                              cuda=self.is_cuda())
             indfl = indices.float()
 
             # Mask for duplicate indices
@@ -638,7 +645,7 @@ def generate_integer_tuples(means, gadditional, ladditional, rng=None, relative_
         (ie. vals just repeats each value in the input 'val' 2^K times).
     """
 
-    b, k, c, rank = means.size()
+    b, k, c, rank = means.size() # batch_size, k, num_pairs, index_spatial_dimension
     FT = torch.cuda.FloatTensor if cuda else torch.FloatTensor
 
     if seed is not None:
@@ -650,9 +657,7 @@ def generate_integer_tuples(means, gadditional, ladditional, rng=None, relative_
     if fm is None:
         fm = floor_mask(rank, cuda)
     fm = fm[None, None, None, :].expand(b, k, c, 2 ** rank, rank)
-
     neighbor_ints = means.data[:, :, :, None, :].expand(b, k, c, 2 ** rank, rank).contiguous()
-
     neighbor_ints[fm] = neighbor_ints[fm].floor()
     neighbor_ints[~fm] = neighbor_ints[~fm].ceil()
 
