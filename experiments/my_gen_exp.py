@@ -4,7 +4,7 @@ from argparse import ArgumentParser
 import torch
 import torch.nn.functional as F
 import torch.distributions as dist
-from torch.autograd import profiler
+from torch import profiler
 import numpy as np
 import gzip
 
@@ -167,7 +167,7 @@ def train(args: argparse.Namespace):
         if cuda:
             source, target = source.cuda(), target.cuda()
         instances_seen += source.size(0)
-        with profiler.profile(with_stack=True) as prof:
+        with profiler.profile(activities=[profiler.ProfilerActivity.CUDA, profiler.ProfilerActivity.CPU]) as prof:
             output = model(source)
         loss = torch.nn.functional.nll_loss(output.transpose(2, 1), target, reduction='mean')
         to_log = {'loss': loss.item(), 'lr': scheduler.get_last_lr()[0]}
@@ -189,7 +189,7 @@ def train(args: argparse.Namespace):
             to_log = {'validation_loss': loss.item()}
             print('wandblog', to_log)
             wandb.log(to_log)
-    print(prof.key_averages(group_by_stack_n=5).table(sort_by='self_cpu_time_total', row_limit=5))
+    print(prof.key_averages(group_by_stack_n=5).table(sort_by='cuda_time', row_limit=5))
 
 
 def parse_args() -> argparse.Namespace:
