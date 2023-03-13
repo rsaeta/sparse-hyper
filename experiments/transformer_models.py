@@ -1,7 +1,6 @@
 import torch
 from torch import nn, Tensor
 
-
 from _context import sparse
 from sparse import util
 
@@ -10,6 +9,48 @@ try:
     from typing import Literal
 except ImportError:
     from typing_extensions import Literal
+
+
+def get_eyes(j, l):
+    return torch.arange((j % l) + 1) + ((j // l) * l)
+
+def get_coords(t, k):
+    num_coords = (torch.arange(k) + 1).sum() * (t // k) + torch.arange(t % k).sum()
+    coords = torch.empty((num_coords, 2))
+    i = 0
+    for j in range(t):
+        eyes = get_eyes(j, k)
+        for eye in eyes:
+            coords[i, 0] = j
+            coords[i, 1] = eye
+            i += 1
+    return coords
+
+
+class SparseHead1(nn.Module):
+
+    def __init__(self, k=8):
+        super().__init__()
+        self.k = k
+
+    def forward(self, x: Tensor) -> Tensor:
+        b, t, e = x.size()
+        coords = get_coords(t, self.k)
+
+
+class BlocksparseSelfAttention(nn.Module):
+
+    def __init__(self, emb: int):
+        super().__init__()
+        self.emb = emb
+        self.to_keys = nn.Linear(emb, emb)
+        self.to_queries = nn.Linear(emb, emb)
+        self.to_values = nn.Linear(emb, emb)
+
+    def forward(self, x: Tensor) -> Tensor:
+        assert x.size(-1) == self.emb, f'Input tensor must have embedding size {self.emb}. Got {x.size(-1)}'
+        K, Q, V = self.to_keys(x), self.to_queries(x), self.to_values(x)
+
 
 
 class SparseSelfAttention(nn.Module):
@@ -140,8 +181,8 @@ class SparseSelfAttention(nn.Module):
         # element will be represented as a query. However, since indices were generated via the hyper network, the keys
         # are actually going to sparse (80 vs 200). This is what indices_flattened[:, {0,1}] refers to.
         # NOTE: This explodes the size of Q or K since there's a lot of repeats in ar.
-        squeries = Q[ar, indices_flattened[:, 0], :]
-        skeys = K[ar, indices_flattened[:, 1], :]
+        squeries = Q[ar, indices_flattened[:, 1], :]
+        skeys = K[ar, indices_flattened[:, 0], :]
 
         # In order to get the dot between QK for each of the elements acting as Q and K, somehow this works out
         # to calculating that dot product in a flattened form
