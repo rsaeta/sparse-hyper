@@ -92,7 +92,7 @@ class BlocksparseFixedSelfAttention(nn.Module):
         K, Q, V = self.to_keys(x), self.to_queries(x), self.to_values(x)
         h1 = self.head1(K, Q, V)
         h2 = self.head2(K, Q, V)
-        comb = torch.cat([h1, h2],dim=-1)
+        comb = torch.cat([h1, h2], dim=-1)
         return self.unify(comb)
 
 

@@ -83,6 +83,7 @@ class SparseTransformer(nn.Module):
         return positions + x
 
     def forward(self, x: Tensor) -> Tensor:
+        assert torch.isnan(self.token_embedding.weight).sum() == 0, "We got some nan embeddings"
         embedded = self.embed(x)  # (batch, context_len, emb)
         t_blocked = self.t_blocks(embedded)  # (batch, context_len, emb)
         done = self.post_tblocks(t_blocked)
