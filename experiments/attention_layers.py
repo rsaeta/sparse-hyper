@@ -280,6 +280,8 @@ class SparseSelfAttention(nn.Module):
         assert ((indices < 0).sum().item() == 0) and ((indices >= context).sum().item() == 0), \
             f'Found some indices out of bounds: indices < 0: {(indices < 0).sum().item()}; ' \
             f'indices >= {context}: {(indices >= context).sum().item()}'
+        if self.mask:
+            indices = util.flip(indices)
         indices_fl = indices.float()
         # For each point (self.k), we expect to sample the 2**rank closest points from the first set of sampling,
         # then self.gadditional globally-sampled indices, and self.nadditional neighborhood-sampled indices.
@@ -353,11 +355,8 @@ class SparseSelfAttention(nn.Module):
         batch_is = torch.arange(batch2, dtype=torch.long, device=util.d(x))[None, :].expand(np, -1).t().reshape(-1)
         indices2 = torch.cat([batch_is[:, None], indices.view(-1, 2)], dim=-1)
         dot = util.calc_vals(Q, K.transpose(-2, -1), indices2).view(batch2, -1)
-        dot = weights * dot
-
-        # if self.mask:
-            # util.mask_(dot, maskval=0.0, mask_diagonal=False)
-            # dot = sparse.logsoftmax(indices, weights * dot, (context, context), method='naive').exp()=
+        # dot = weights * dot
+        dot = sparse.logsoftmax(indices, weights * dot, (context, context), method='naive').exp()
         out = sparse.batchmm(indices, dot, size=(context, context), xmatrix=V)
         out = out.transpose(1, 2).contiguous().view(batch, context, self.n_heads * emb)
         return self.unify(out)
