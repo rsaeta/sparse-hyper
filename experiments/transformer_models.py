@@ -169,29 +169,29 @@ class SparseSelfAttention(nn.Module):
         K = K / (emb ** (1 / 4))
 
         # Now this is just a list of coordinates arranged by batch,head,context
-        # indices_flattened = indices.view(batch * self.n_heads * context * num_points, -1)
+        indices_flattened = indices.view(batch * self.n_heads * context * num_points, -1)
         # This is an array that refers the coordinates in the above tensor back to the original values in KQV matrices
-        # ar = torch.arange(batch * self.n_heads, device=util.d(x), dtype=torch.long)[:, None] \
-        #     .expand(batch * self.n_heads, context * num_points) \
-        #     .contiguous() \
-        #     .view(batch * self.n_heads * context * num_points)
+        ar = torch.arange(batch * self.n_heads, device=util.d(x), dtype=torch.long)[:, None] \
+            .expand(batch * self.n_heads, context * num_points) \
+            .contiguous() \
+            .view(batch * self.n_heads * context * num_points)
 
         # It's important to note we have 1 degree of freedom (see out (torch.cat([out, indices])) was generated via
         # torch.arange in order to have "k" points for every token in the attention matrix. This means that every
         # element will be represented as a query. However, since indices were generated via the hyper network, the keys
         # are actually going to sparse (80 vs 200). This is what indices_flattened[:, {0,1}] refers to.
         # NOTE: This explodes the size of Q or K since there's a lot of repeats in ar.
-        # squeries = Q[ar, indices_flattened[:, 1], :]
-        # skeys = K[ar, indices_flattened[:, 0], :]
+        squeries = Q[ar, indices_flattened[:, 1], :]
+        skeys = K[ar, indices_flattened[:, 0], :]
 
         # In order to get the dot between QK for each of the elements acting as Q and K, somehow this works out
         # to calculating that dot product in a flattened form
-        # dot_ish = torch.bmm(squeries[:, None, :], skeys[:, :, None]).view(batch * self.n_heads, context * num_points)
+        dot = torch.bmm(squeries[:, None, :], skeys[:, :, None]).view(batch * self.n_heads, context * num_points)
         # breakpoint()
-        batch2, np, _ = indices.shape
-        batch_is = torch.arange(batch2, dtype=torch.long, device=util.d(x))[None, :].expand(np, -1).t().reshape(-1)
-        indices2 = torch.cat([batch_is[:, None], indices.view(-1, 2)], dim=-1)
-        dot = util.calc_vals(Q, K.transpose(-2, -1), indices2).view(batch2, -1)
+        # batch2, np, _ = indices.shape
+        # batch_is = torch.arange(batch2, dtype=torch.long, device=util.d(x))[None, :].expand(np, -1).t().reshape(-1)
+        # indices2 = torch.cat([batch_is[:, None], indices.view(-1, 2)], dim=-1)
+        # dot = util.calc_vals(Q, K.transpose(-2, -1), indices2).view(batch2, -1)
         if self.mask:
             util.mask_(dot, maskval=0.0, mask_diagonal=False)
             dot = sparse.logsoftmax(indices, weights * dot, (context, context), method='naive').exp()
