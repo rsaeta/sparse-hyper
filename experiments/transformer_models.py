@@ -189,7 +189,7 @@ class SparseSelfAttention(nn.Module):
         # dot_ish = torch.bmm(squeries[:, None, :], skeys[:, :, None]).view(batch * self.n_heads, context * num_points)
         # breakpoint()
         batch2, np, _ = indices.shape
-        batch_is = torch.arange(batch2, dtype=torch.long)[None, :].expand(np, -1).t().reshape(-1)
+        batch_is = torch.arange(batch2, dtype=torch.long, device=util.d(x))[None, :].expand(np, -1).t().reshape(-1)
         indices2 = torch.cat([batch_is[:, None], indices.view(-1, 2)], dim=-1)
         dot = util.calc_vals(Q, K.transpose(-2, -1), indices2).view(batch2, -1)
         # if self.mask:
