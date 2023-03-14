@@ -14,6 +14,7 @@ except ImportError:
 def get_eyes(j, l):
     return torch.arange((j % l) + 1) + ((j // l) * l)
 
+
 def get_coords(t, k):
     num_coords = (torch.arange(k) + 1).sum() * (t // k) + torch.arange(t % k).sum()
     coords = torch.empty((num_coords, 2))
@@ -29,28 +30,74 @@ def get_coords(t, k):
 
 class SparseHead1(nn.Module):
 
-    def __init__(self, k=8):
+    def __init__(self, t=200, k=8):
         super().__init__()
         self.k = k
+        self.register_buffer('indices', get_coords(t, k))
 
-    def forward(self, x: Tensor) -> Tensor:
-        b, t, e = x.size()
-        coords = get_coords(t, self.k)
+    def forward(self, k: Tensor, q: Tensor, v: Tensor) -> Tensor:
+        b, t, e = k.size()
+        expanded_coords = self.indices[None, :].expand(b, -1, -1).long()
+        _, np, dims = expanded_coords.size()
+        bcoords = torch.arange(b, device=util.d(k))[:, None].expand(-1, np).reshape(-1)[:, None]
+        coords = expanded_coords.reshape(b*np, -1)
+        indices = torch.cat([bcoords, coords], dim=-1).long()
+        dot = util.calc_vals(k, q.transpose(-2, -1), indices).view(b, -1)
+        out = sparse.batchmm(expanded_coords, dot, size=(t, t), xmatrix=v)
+        return out
 
 
-class BlocksparseSelfAttention(nn.Module):
+def get_coords2(t, k):
+    coords = torch.arange(t//k) * k
+    np = (t - coords).sum()
+    toret = torch.empty((np, 2))
+    i = 0
+    for c in coords:
+        for y in torch.arange(c, t):
+            toret[i, 0] = y
+            toret[i, 1] = c
+            i += 1
+    assert i == np
+    return toret
 
-    def __init__(self, emb: int):
+
+class SparseHead2(nn.Module):
+
+    def __init__(self, t=200, k=8):
+        super().__init__()
+        self.register_buffer('indices', get_coords2(t, k))
+
+    def forward(self, k: Tensor, q: Tensor, v: Tensor) -> Tensor:
+        b, t, e = k.size()
+        expanded_coords = self.indices[None, :].expand(b, -1, -1).long()
+        _, np, dims = expanded_coords.size()
+        bcoords = torch.arange(b, device=util.d(k))[:, None].expand(-1, np).reshape(-1)[:, None]
+        coords = expanded_coords.reshape(b * np, -1)
+        indices = torch.cat([bcoords, coords], dim=-1).long()
+        dot = util.calc_vals(k, q.transpose(-2, -1), indices).view(b, -1)
+        out = sparse.batchmm(expanded_coords, dot, size=(t, t), xmatrix=v)
+        return out
+
+
+class BlocksparseFixedSelfAttention(nn.Module):
+
+    def __init__(self, emb: int, t: int, k: int, **kwargs):
         super().__init__()
         self.emb = emb
         self.to_keys = nn.Linear(emb, emb)
         self.to_queries = nn.Linear(emb, emb)
         self.to_values = nn.Linear(emb, emb)
+        self.head1 = SparseHead1(t, k)
+        self.head2 = SparseHead2(t, k)
+        self.unify = nn.Linear(emb*2, emb)
 
     def forward(self, x: Tensor) -> Tensor:
         assert x.size(-1) == self.emb, f'Input tensor must have embedding size {self.emb}. Got {x.size(-1)}'
         K, Q, V = self.to_keys(x), self.to_queries(x), self.to_values(x)
-
+        h1 = self.head1(K, Q, V)
+        h2 = self.head2(K, Q, V)
+        comb = torch.cat([h1, h2],dim=-1)
+        return self.unify(comb)
 
 
 class SparseSelfAttention(nn.Module):
@@ -169,33 +216,33 @@ class SparseSelfAttention(nn.Module):
         K = K / (emb ** (1 / 4))
 
         # Now this is just a list of coordinates arranged by batch,head,context
-        indices_flattened = indices.view(batch * self.n_heads * context * num_points, -1)
+        # indices_flattened = indices.view(batch * self.n_heads * context * num_points, -1)
         # This is an array that refers the coordinates in the above tensor back to the original values in KQV matrices
-        ar = torch.arange(batch * self.n_heads, device=util.d(x), dtype=torch.long)[:, None] \
-            .expand(batch * self.n_heads, context * num_points) \
-            .contiguous() \
-            .view(batch * self.n_heads * context * num_points)
+        # ar = torch.arange(batch * self.n_heads, device=util.d(x), dtype=torch.long)[:, None] \
+        #     .expand(batch * self.n_heads, context * num_points) \
+        #     .contiguous() \
+        #     .view(batch * self.n_heads * context * num_points)
 
         # It's important to note we have 1 degree of freedom (see out (torch.cat([out, indices])) was generated via
         # torch.arange in order to have "k" points for every token in the attention matrix. This means that every
         # element will be represented as a query. However, since indices were generated via the hyper network, the keys
         # are actually going to sparse (80 vs 200). This is what indices_flattened[:, {0,1}] refers to.
         # NOTE: This explodes the size of Q or K since there's a lot of repeats in ar.
-        squeries = Q[ar, indices_flattened[:, 1], :]
-        skeys = K[ar, indices_flattened[:, 0], :]
+        # squeries = Q[ar, indices_flattened[:, 1], :]
+        # skeys = K[ar, indices_flattened[:, 0], :]
 
         # In order to get the dot between QK for each of the elements acting as Q and K, somehow this works out
         # to calculating that dot product in a flattened form
-        dot = torch.bmm(squeries[:, None, :], skeys[:, :, None]).view(batch * self.n_heads, context * num_points)
-        # breakpoint()
-        # batch2, np, _ = indices.shape
-        # batch_is = torch.arange(batch2, dtype=torch.long, device=util.d(x))[None, :].expand(np, -1).t().reshape(-1)
-        # indices2 = torch.cat([batch_is[:, None], indices.view(-1, 2)], dim=-1)
-        # dot = util.calc_vals(Q, K.transpose(-2, -1), indices2).view(batch2, -1)
-        if self.mask:
-            util.mask_(dot, maskval=0.0, mask_diagonal=False)
-            dot = sparse.logsoftmax(indices, weights * dot, (context, context), method='naive').exp()
-        # breakpoint()
+        # dot = torch.bmm(squeries[:, None, :], skeys[:, :, None]).view(batch * self.n_heads, context * num_points)
+
+        batch2, np, _ = indices.shape
+        batch_is = torch.arange(batch2, dtype=torch.long, device=util.d(x))[None, :].expand(np, -1).t().reshape(-1)
+        indices2 = torch.cat([batch_is[:, None], indices.view(-1, 2)], dim=-1)
+        dot = util.calc_vals(Q, K.transpose(-2, -1), indices2).view(batch2, -1)
+        # if self.mask:
+            # util.mask_(dot, maskval=0.0, mask_diagonal=False)
+            # dot = sparse.logsoftmax(indices, weights * dot, (context, context), method='naive').exp()
+        breakpoint()
         out = sparse.batchmm(indices, dot, size=(context, context), xmatrix=V)
         out = out.transpose(1, 2).contiguous().view(batch, context, self.n_heads * emb)
         return self.unify(out)
@@ -216,6 +263,8 @@ class TransformerBlock(nn.Module):
             self.attend = MultiHeadAttention(heads, emb, emb, context)
         elif attention_type == 'sparse':
             self.attend = SparseSelfAttention(emb, context, n_heads=heads, **kwargs)
+        elif attention_type == 'fixed':
+            self.attend = BlocksparseFixedSelfAttention(emb, t=context, **kwargs)
         else:
             raise ValueError(f'attention_type {attention_type} not recognized')
 
@@ -354,4 +403,3 @@ class MultiHeadAttention(nn.Module):
         out = torch.cat([h(x) for h in self.heads], dim=-1)
         out = self.dropout(self.proj(out))
         return out
-
