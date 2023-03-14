@@ -236,7 +236,7 @@ def parse_args() -> argparse.Namespace:
                         dest='gadditional', default=2, type=int)
     parser.add_argument('-V', '--validation-every', default=200,
                         dest='validation_every', type=int)
-    parser.add_argument('-A', '--attention-type', choices=['dense', 'sparse', 'fixed'],
+    parser.add_argument('-A', '--attention-type', choices=['dense', 'sparse', 'fixed', 'sparse2d'],
                         dest='attention_type', default='dense', type=str)
     parser.add_argument('-L', '--clipping-value', type=float,
                         dest='clipping_value', default=1.0)
