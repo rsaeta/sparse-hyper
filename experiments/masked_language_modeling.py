@@ -90,7 +90,7 @@ def sample_batch(data, length, batch_size, mask_token, mask_p=0.15):
     targets = seqs_inputs.clone()
     seqs_inputs[mask] = mask_token
 
-    return seqs_inputs, targets
+    return seqs_inputs, targets, mask
 
 
 def init_wandb(args):
@@ -124,15 +124,15 @@ def train(args: argparse.Namespace):
     for i in range(args.num_batches):
         model.train(True)
         optimizer.zero_grad()
-        source, target = sample_batch(data_train,
-                                                      length=args.context,
-                                                      batch_size=args.batch_size,
-                                                      mask_token=mask_token_index)
+        source, target, mask = sample_batch(data_train,
+                                          length=args.context,
+                                          batch_size=args.batch_size,
+                                          mask_token=mask_token_index)
         if cuda:
-            source, target = source.cuda(), target.cuda()
+            source, target, mask = source.cuda(), target.cuda(), mask.cuda()
         instances_seen += source.size(0)
         output = model(source)
-        loss = torch.nn.functional.nll_loss(output.transpose(2, 1), target, reduction='mean')
+        loss = torch.nn.functional.nll_loss(output[mask, :], target[mask], reduction='mean')
         to_log = {'loss': loss.item(), 'lr': scheduler.get_last_lr()[0]}
         print('wandblog', to_log)
         wandb.log(to_log)
@@ -143,15 +143,15 @@ def train(args: argparse.Namespace):
 
         if i % args.validation_every == 0 and i > 0:
             model.train(False)
-            source, target = sample_batch(data_test,
+            source, target, mask = sample_batch(data_test,
                                                           length=args.context,
                                                           batch_size=args.batch_size,
                                                           mask_token=mask_token_index)
             if cuda:
-                source, target = source.cuda(), target.cuda()
+                source, target, mask = source.cuda(), target.cuda(), mask.cuda()
             instances_seen += source.size(0)
             output = model(source)
-            loss = torch.nn.functional.nll_loss(output.transpose(2, 1), target, reduction='mean')
+            loss = torch.nn.functional.nll_loss(output[mask, :], target[mask], reduction='mean')
             to_log = {'validation_loss': loss.item()}
             print('wandblog', to_log)
             wandb.log(to_log)
