@@ -68,7 +68,7 @@ def enwik8(path, n_train=int(90e6), n_valid=int(5e6), n_test=int(5e6)):
         return torch.from_numpy(trX), torch.from_numpy(vaX), torch.from_numpy(teX)
 
 
-def sample_batch(data, length, batch_size, mask_token):
+def sample_batch(data, length, batch_size, mask_token, mask_p=0.15):
     """
     Takes the data (a single sequence of tokens) and slices out a batch of subsequences to provide as input to the model
     while also randomly masking a single entry in the sequence to the mask_token provided.
@@ -76,25 +76,21 @@ def sample_batch(data, length, batch_size, mask_token):
     :param length: The length of the subsequences in the batch.
     :param batch_size: The number of subsequences in the batch
     :param mask_token: The token that represents the mask to be predicted by the model
+    :param mask_p: The probability of masking a token
     :return: A pair (input, target) of minteger matrices representing the input and target for the model.
     """
 
     # Sample the starting indices of the sequences to slice out.
     starts = torch.randint(size=(batch_size,), low=0, high=data.size(0) - length - 1)
 
-    # Indices to mask out in the training batches
-    mask_eyes = torch.randint(size=(batch_size,), low=0, high=length)
-    batch_eyes = torch.arange(batch_size)
-
     # Slice out the input sequences
-    seqs_inputs = [data[start:start + length] for start in starts]
+    seqs_inputs = [data[None, start:start + length] for start in starts]
+    seqs_inputs = torch.cat(seqs_inputs).long()
+    mask = torch.rand(seqs_inputs.size()) < mask_p
+    targets = seqs_inputs.clone()
+    seqs_inputs[mask] = mask_token
 
-    # We now have two lists of torch vectors, which we can concatenate into matrices of batch_size-by-length
-    inputs = torch.cat([s[None, :] for s in seqs_inputs], dim=0).to(torch.long)
-    target = inputs[batch_eyes, mask_eyes].clone()
-    inputs[batch_eyes, mask_eyes] = mask_token
-
-    return inputs, target, mask_eyes
+    return seqs_inputs, targets
 
 
 def init_wandb(args):
@@ -128,17 +124,15 @@ def train(args: argparse.Namespace):
     for i in range(args.num_batches):
         model.train(True)
         optimizer.zero_grad()
-        source, target, masked_indices = sample_batch(data_train,
+        source, target = sample_batch(data_train,
                                                       length=args.context,
                                                       batch_size=args.batch_size,
                                                       mask_token=mask_token_index)
         if cuda:
-            source, target, masked_indices = source.cuda(), target.cuda(), masked_indices.cuda()
+            source, target = source.cuda(), target.cuda()
         instances_seen += source.size(0)
         output = model(source)
-        b, t, e = output.size()
-        masked_preds = output[torch.arange(b), masked_indices]  # select only tokens replacing masked
-        loss = torch.nn.functional.nll_loss(masked_preds, target, reduction='mean')
+        loss = torch.nn.functional.nll_loss(output.transpose(2, 1), target, reduction='mean')
         to_log = {'loss': loss.item(), 'lr': scheduler.get_last_lr()[0]}
         print('wandblog', to_log)
         wandb.log(to_log)
@@ -149,17 +143,15 @@ def train(args: argparse.Namespace):
 
         if i % args.validation_every == 0 and i > 0:
             model.train(False)
-            source, target, masked_indices = sample_batch(data_test,
+            source, target = sample_batch(data_test,
                                                           length=args.context,
                                                           batch_size=args.batch_size,
                                                           mask_token=mask_token_index)
             if cuda:
-                source, target, masked_indices = source.cuda(), target.cuda(), masked_indices.cuda()
+                source, target = source.cuda(), target.cuda()
             instances_seen += source.size(0)
             output = model(source)
-            b, t, e = output.size()
-            masked_preds = output[torch.arange(b), masked_indices]  # select only tokens replacing masked
-            loss = torch.nn.functional.nll_loss(masked_preds, target, reduction='mean')
+            loss = torch.nn.functional.nll_loss(output.transpose(2, 1), target, reduction='mean')
             to_log = {'validation_loss': loss.item()}
             print('wandblog', to_log)
             wandb.log(to_log)
