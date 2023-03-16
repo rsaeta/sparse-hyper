@@ -1,5 +1,7 @@
 import argparse
+import json
 from argparse import ArgumentParser
+import os
 
 import torch
 import torch.nn.functional as F
@@ -106,8 +108,17 @@ def init_wandb(args):
     )
 
 
+def setup(args: argparse.Namespace):
+    save_dir = args.save_dir
+    if not os.path.isdir(save_dir):
+        os.mkdir(save_dir)
+    with open(os.path.join(save_dir, 'config.json'), 'w') as f:
+        json.dump(vars(args), f)
+
+
 def train(args: argparse.Namespace):
     model = get_model(args)
+    setup(args)
     if cuda:
         model.cuda()
     optimizer = torch.optim.Adam(lr=args.learning_rate, params=model.parameters())
@@ -119,18 +130,19 @@ def train(args: argparse.Namespace):
 
     # We want the mask token index to not be a token in the actual data.
     mask_token_index = torch.cat([data_train, data_val, data_test], dim=0).max().item() + 1
-
+    n_validated = 0
     data_train, data_test = (data_train, data_val)
     for i in range(args.num_batches):
         model.train(True)
         optimizer.zero_grad()
         source, target, mask = sample_batch(data_train,
-                                          length=args.context,
-                                          batch_size=args.batch_size,
-                                          mask_token=mask_token_index)
+                                            length=args.context,
+                                            batch_size=args.batch_size,
+                                            mask_token=mask_token_index)
         if cuda:
             source, target, mask = source.cuda(), target.cuda(), mask.cuda()
         instances_seen += source.size(0)
+
         output = model(source)
         loss = torch.nn.functional.nll_loss(output[mask, :], target[mask], reduction='mean')
         to_log = {'loss': loss.item(), 'lr': scheduler.get_last_lr()[0]}
@@ -144,9 +156,9 @@ def train(args: argparse.Namespace):
         if i % args.validation_every == 0 and i > 0:
             model.train(False)
             source, target, mask = sample_batch(data_test,
-                                                          length=args.context,
-                                                          batch_size=args.batch_size,
-                                                          mask_token=mask_token_index)
+                                                length=args.context,
+                                                batch_size=args.batch_size,
+                                                mask_token=mask_token_index)
             if cuda:
                 source, target, mask = source.cuda(), target.cuda(), mask.cuda()
             instances_seen += source.size(0)
@@ -155,6 +167,10 @@ def train(args: argparse.Namespace):
             to_log = {'validation_loss': loss.item()}
             print('wandblog', to_log)
             wandb.log(to_log)
+            if n_validated % args.save_every == 0:
+                f_name = f'{args.save_dir}/checkpoint_{n_validated//args.save_every}.pt'
+                torch.save(model.state_dict(), f_name)
+            n_validated += 1
 
 
 def parse_args() -> argparse.Namespace:
@@ -208,6 +224,9 @@ def parse_args() -> argparse.Namespace:
                         dest='attention_type', default='dense', type=str)
     parser.add_argument('-L', '--clipping-value', type=float,
                         dest='clipping_value', default=1.0)
+    parser.add_argument('-Y', '--save-every', default=1,
+                        type=int, dest='save_every')
+    parser.add_argument('--save-dir', dest='save_dir', type=str, default='./saved_models')
     options = parser.parse_args()
     print(options)
     return options
