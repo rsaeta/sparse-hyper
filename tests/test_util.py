@@ -280,6 +280,14 @@ class TestLayers(unittest.TestCase):
         for e in range(100):
             print(util.schedule(e, sched))
 
+    def test_calc_vals(self):
+        X = torch.rand((16, 200, 12))  # b, t, e
+        W_prime = torch.bmm(X, X.transpose(-1, -2))  # b, t, t represents unnormalized attention matrix
+        pattern = (torch.rand((16, 200, 200)) < 0.05).bool()  # t, t
+        indices = pattern.nonzero()
+        vals = util.calc_vals(X, X.transpose(-1, -2), indices)
+        assert all(torch.isclose(W_prime[tuple(indices.t())], vals))
+
 
 if __name__ == '__main__':
     unittest.main()

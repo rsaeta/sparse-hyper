@@ -4,7 +4,6 @@ from argparse import ArgumentParser
 import torch
 import torch.nn.functional as F
 import torch.distributions as dist
-from torch import profiler
 import numpy as np
 import gzip
 
@@ -155,7 +154,7 @@ def train(args: argparse.Namespace):
         model.cuda()
     optimizer = torch.optim.Adam(lr=args.learning_rate, params=model.parameters())
     scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer,
-                                                  lambda i: 1.0 if i < 3500 else 0.5)
+                                                  lambda i: 1.0 if i < 300 else 0.5)
     # scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=args.lr_stepsize, gamma=0.5)
     instances_seen = 0
     data_train, data_val, data_test = enwik8(args.data)
@@ -167,8 +166,7 @@ def train(args: argparse.Namespace):
         if cuda:
             source, target = source.cuda(), target.cuda()
         instances_seen += source.size(0)
-        with profiler.profile(activities=[profiler.ProfilerActivity.CUDA, profiler.ProfilerActivity.CPU]) as prof:
-            output = model(source)
+        output = model(source)
         loss = torch.nn.functional.nll_loss(output.transpose(2, 1), target, reduction='mean')
         to_log = {'loss': loss.item(), 'lr': scheduler.get_last_lr()[0]}
         print('wandblog', to_log)
@@ -189,7 +187,6 @@ def train(args: argparse.Namespace):
             to_log = {'validation_loss': loss.item()}
             print('wandblog', to_log)
             wandb.log(to_log)
-    print(prof.key_averages(group_by_stack_n=5).table(sort_by='cuda_time', row_limit=5))
 
 
 def parse_args() -> argparse.Namespace:
@@ -239,7 +236,7 @@ def parse_args() -> argparse.Namespace:
                         dest='gadditional', default=2, type=int)
     parser.add_argument('-V', '--validation-every', default=200,
                         dest='validation_every', type=int)
-    parser.add_argument('-A', '--attention-type', choices=['dense', 'sparse'],
+    parser.add_argument('-A', '--attention-type', choices=['dense', 'sparse', 'fixed', 'sparse2d'],
                         dest='attention_type', default='dense', type=str)
     parser.add_argument('-L', '--clipping-value', type=float,
                         dest='clipping_value', default=1.0)

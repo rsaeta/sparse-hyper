@@ -647,6 +647,24 @@ def mask_(matrices, maskval=0.0, mask_diagonal=True):
     matrices[..., indices[0], indices[1]] = maskval
 
 
+def calc_vals(A, B, indices):
+    """
+    Given two tensors A and B with shapes (..., n, e) and (..., e, n) respectively,
+    the resulting tensor multiplication AB would be of shape (n, n).
+    """
+    an, ae = A.shape[-2:]
+    be, bn = B.shape[-2:]
+    assert (an == bn) and (ae == be), f'Incompatible shapes to multipy {A.shape}, {B.shape}'
+    i_tups = tuple(indices.transpose(0, 1))
+    A_eyes = i_tups[:-1]
+    B_eyes = tuple([*i_tups[:-2], i_tups[-1]])
+    Ays = A[A_eyes]  # (..., N, e)
+    B_batches = B_eyes[0] if len(B_eyes) == 2 else B_eyes[:-1]
+    Bs = B[B_batches, :, B_eyes[-1]]  # (..., e, N)
+    values = torch.bmm(Ays[:, None, :], Bs[:, :, None])
+    return values.squeeze()
+
+
 def nduplicates(tuples):
     """
     Takes a tensor of integer tuples, and for each tuple that occurs multiple times marks all
