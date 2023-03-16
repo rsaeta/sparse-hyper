@@ -138,7 +138,6 @@ def train(args: argparse.Namespace):
         output = model(source)
         b, t, e = output.size()
         masked_preds = output[torch.arange(b), masked_indices]  # select only tokens replacing masked
-        # breakpoint()
         loss = torch.nn.functional.nll_loss(masked_preds, target, reduction='mean')
         to_log = {'loss': loss.item(), 'lr': scheduler.get_last_lr()[0]}
         print('wandblog', to_log)
@@ -158,7 +157,9 @@ def train(args: argparse.Namespace):
                 source, target, masked_indices = source.cuda(), target.cuda(), masked_indices.cuda()
             instances_seen += source.size(0)
             output = model(source)
-            loss = torch.nn.functional.nll_loss(output.transpose(2, 1), target, reduction='mean')
+            b, t, e = output.size()
+            masked_preds = output[torch.arange(b), masked_indices]  # select only tokens replacing masked
+            loss = torch.nn.functional.nll_loss(masked_preds, target, reduction='mean')
             to_log = {'validation_loss': loss.item()}
             print('wandblog', to_log)
             wandb.log(to_log)

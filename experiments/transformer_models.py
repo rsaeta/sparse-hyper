@@ -26,7 +26,7 @@ class TransformerBlock(nn.Module):
                  **kwargs):
         super().__init__()
         if attention_type == 'dense':
-            self.attend = MultiHeadAttention(heads, emb, emb, context)
+            self.attend = MultiHeadAttention(heads, emb, emb, context, **kwargs)
         elif attention_type == 'sparse':
             self.attend = SparseSelfAttention(emb, context, n_heads=heads, **kwargs)
         elif attention_type == 'fixed':
