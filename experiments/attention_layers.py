@@ -131,7 +131,7 @@ class ReallySparseAttention(nn.Module):
         assert emb == self.emb, f'Expected embedded equal to {self.emb}. Got {emb}'
 
         # inp = torch.cat([x, coords], dim=2)
-        params = self.to_param(x)  # (B, C, k*3) k means and sigmas for each point (1 degree of freedom)
+        params = self.to_param(x)  # (B, C, k*3) k means and sigmas for each point (2 degrees of freedom)
 
         # Generate the logits that correspond to the horizontal coordinate of the current word
         diags = torch.arange(context_len, device=util.d(x), dtype=torch.float)
