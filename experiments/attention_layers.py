@@ -137,7 +137,7 @@ class ReallySparseAttention(nn.Module):
 
         # Generate the logits that correspond to the horizontal coordinate of the current word
         diags = torch.arange(context_len, device=util.d(x), dtype=torch.float)
-        diags = util.inv(diags, mx=context_len)
+        # diags = util.inv(diags, mx=context_len)
         diags = diags[None, :, None, None].expand(batch_size, -1, self.k, 1)  # (B, C, K, 1)
 
         means = params[:, :, :self.k*2].view(batch_size, -1, self.k, 2)  # mean for current point  (B, C, K, 2)
@@ -260,12 +260,13 @@ class SparseSelfAttention(nn.Module):
         diags = torch.arange(context_len, device=util.d(x), dtype=torch.float)
         diags = util.inv(diags, mx=context_len)
         diags = diags[None, :, None, None].expand(batch_size, -1, self.k, 1)  # (B, C, K, 1)
+        # breakpoint()
 
         means = params[:, :, :self.k].view(batch_size, -1, self.k, 1)  # Single mean for current point  (B, C, K, 1)
         sigmas = params[:, :, self.k:].view(batch_size, -1, self.k)  # (B, C, K)
         values = self.mvalues[None, None, :].expand(batch_size, context_len, -1)  # Expand to all points (B, C, K)
 
-        means = diags - torch.nn.functional.softplus(means)
+        # means = diags - torch.nn.functional.softplus(means)
         means = sparse.transform_means(means, (context_len,))
         sigmas = sparse.transform_sigmas(sigmas, (context_len,))
         return means, sigmas, values
