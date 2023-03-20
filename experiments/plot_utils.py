@@ -4,7 +4,7 @@ import matplotlib.pyplot as plt
 
 
 def attention_viz(coords: Tensor, sigmas: Tensor, size: Tuple, save_file: str = None):
-    coords, sigmas = coords.cpu(), sigmas.cpu()
+    coords, sigmas = coords.detach().cpu(), sigmas.detach().cpu()
     h, w = size
     plt.xlim(0, w)
     plt.ylim(0, h)
