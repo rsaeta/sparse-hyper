@@ -1,7 +1,10 @@
+from typing import Tuple
+from torch import Tensor
 import matplotlib.pyplot as plt
 
 
-def attention_viz(coords, sigmas, size, save_file=None):
+def attention_viz(coords: Tensor, sigmas: Tensor, size: Tuple, save_file: str = None):
+    coords, sigmas = coords.cpu(), sigmas.cpu()
     h, w = size
     plt.xlim(0, w)
     plt.ylim(0, h)
