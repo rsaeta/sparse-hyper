@@ -12,6 +12,7 @@ import gzip
 import wandb
 
 from transformer_models import GeneratingTransformer
+from plot_utils import attention_viz
 
 # NB, the enwik8 data contains tokens from 9 to 240, but well round up to the nearest
 # power of two.
@@ -143,11 +144,16 @@ def train(args: argparse.Namespace):
         instances_seen += source.size(0)
 
         output = model(source)
-        # breakpoint()
+        if i % 100 == 99:
+            _, (ms, ss, _) = model.forward_for_plot(source)
+            # Iterate through the layers of the model
+            for layer, m, s in enumerate(zip(ms, ss)):
+                context = m.size(1)
+                m = m.view(-1, 2)
+                s = s.view(-1)
+                attention_viz(m, s, (context, context), save_file=f'{i}_attention_{layer}.png')
         loss = torch.nn.functional.nll_loss(output[mask.nonzero(as_tuple=True)],
                                             target[mask.nonzero(as_tuple=True)], reduction='mean')
-        # loss = torch.nn.functional.nll_loss(torch.masked_select(output, mask[:, :, None]).view(256, -1).t(),
-        # target.masked_select(mask), reduction='mean')
         to_log = {'loss': loss.item(), 'lr': scheduler.get_last_lr()[0]}
         print('wandblog', to_log)
         wandb.log(to_log)
@@ -213,7 +219,7 @@ def parse_args() -> argparse.Namespace:
                         default=8, type=int)
     parser.add_argument('-m', '--lr-warmup',
                         dest='lr_warmup',
-                        default=5000, type=int)
+                        default=500, type=int)
     parser.add_argument('-S', '--lr-stepsize',
                         dest='lr_stepsize',
                         default=10, type=int)
