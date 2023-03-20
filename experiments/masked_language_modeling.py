@@ -143,9 +143,11 @@ def train(args: argparse.Namespace):
             source, target, mask = source.cuda(), target.cuda(), mask.cuda()
         instances_seen += source.size(0)
 
-        output = model(source)
-        loss = torch.nn.functional.nll_loss(output[mask.nonzero(as_tuple=True)],
-                                            target[mask.nonzero(as_tuple=True)], reduction='mean')
+        logits = model(source)
+        output = torch.nn.functional.log_softmax(logits, dim=-1)
+        loss = torch.nn.functional.nll_loss(output.view(-1, NUM_TOKENS),#[mask.nonzero(as_tuple=True)],
+                                            target.view(-1),
+                                            reduction='mean')#[mask.nonzero(as_tuple=True)], reduction='mean')
         to_log = {'loss': loss.item(), 'lr': scheduler.get_last_lr()[0]}
         print('wandblog', to_log)
         wandb.log(to_log)
@@ -163,21 +165,21 @@ def train(args: argparse.Namespace):
             if cuda:
                 source, target, mask = source.cuda(), target.cuda(), mask.cuda()
             instances_seen += source.size(0)
-            output = model(source)
-            loss = torch.nn.functional.nll_loss(output[mask, :], target[mask], reduction='mean')
+            logits = model(source)
+            output = torch.nn.functional.log_softmax(logits, dim=-1)
             to_log = {'validation_loss': loss.item()}
             print('wandblog', to_log)
             wandb.log(to_log)
-            _, (ms, ss, _) = model.forward_for_plot(source)
-            # breakpoint()
-            # Iterate through the layers of the model
-            for layer, (m, s) in enumerate(zip(ms, ss)):
-                m = m[0]
-                s = s[0]
-                context = m.size(0)
-                m = m.view(-1, 2)
-                s = s.view(-1)
-                attention_viz(m, s, (context, context), save_file=f'{args.save_dir}/{n_validated//args.save_every}_attention_{layer}.pdf')
+            if args.plot_attention:
+                _, (ms, ss, _) = model.forward_for_plot(source)
+                # Iterate through the layers of the model, looking at first item in the batch
+                for layer, (m, s) in enumerate(zip(ms, ss)):
+                    m = m[0]
+                    s = s[0]
+                    context = m.size(0)
+                    m = m.view(-1, 2)
+                    s = s.view(-1)
+                    attention_viz(m, s, (context, context), save_file=f'{args.save_dir}/{n_validated//args.save_every}_attention_{layer}.pdf')
             if n_validated % args.save_every == 0:
                 f_name = f'{args.save_dir}/checkpoint_{n_validated//args.save_every}.pt'
                 torch.save(model.state_dict(), f_name)
@@ -239,6 +241,7 @@ def parse_args() -> argparse.Namespace:
                         type=int, dest='save_every')
     parser.add_argument('--save-dir', dest='save_dir', type=str, default='./saved_models')
     parser.add_argument('--watch-model', dest='watch_model', action='store_true')
+    parser.add_argument('--plot-attention', dest='plot_attention', action='store_true')
     options = parser.parse_args()
     print(options)
     return options

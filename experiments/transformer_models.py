@@ -168,5 +168,5 @@ class GeneratingTransformer(SparseTransformer):
     def post_tblocks(self, x: Tensor) -> Tensor:
         b, c, e = x.size()  # batch, context, embed
         x = self.to_probs(x.view(b * c, e)).view(b, c, self.vocab_size)
-        return torch.nn.functional.log_softmax(x, dim=2)
+        return x
 
