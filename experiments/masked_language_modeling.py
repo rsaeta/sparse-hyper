@@ -86,11 +86,10 @@ def sample_batch(data, length, batch_size, mask_token, mask_p=0.15):
     starts = torch.randint(size=(batch_size,), low=0, high=data.size(0) - length - 1)
 
     # Slice out the input sequences
-    seqs_inputs = [data[None, start:start + length] for start in starts]
-    seqs_inputs = torch.cat(seqs_inputs).long()
+    seqs_inputs = torch.cat([data[None, start:start + length] for start in starts]).long()
     mask = torch.rand(seqs_inputs.size()) < mask_p
     targets = seqs_inputs.clone()
-    seqs_inputs[mask] = mask_token
+    seqs_inputs.masked_fill_(mask, mask_token)
 
     return seqs_inputs, targets, mask
 
@@ -123,11 +122,11 @@ def train(args: argparse.Namespace):
         model.cuda()
     optimizer = torch.optim.Adam(lr=args.learning_rate, params=model.parameters())
     scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer,
-                                                  lambda i: 1.0 if i < 300 else 0.5)
-    # scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=args.lr_stepsize, gamma=0.5)
+                                                  lambda i: min(1, (i+1)/args.lr_warmup))
     instances_seen = 0
     data_train, data_val, data_test = enwik8(args.data)
-
+    if args.watch_model:
+        wandb.watch(model)
     # We want the mask token index to not be a token in the actual data.
     mask_token_index = torch.cat([data_train, data_val, data_test], dim=0).max().item() + 1
     n_validated = 0
@@ -144,7 +143,11 @@ def train(args: argparse.Namespace):
         instances_seen += source.size(0)
 
         output = model(source)
-        loss = torch.nn.functional.nll_loss(output[mask, :], target[mask], reduction='mean')
+        # breakpoint()
+        loss = torch.nn.functional.nll_loss(output[mask.nonzero(as_tuple=True)],
+                                            target[mask.nonzero(as_tuple=True)], reduction='mean')
+        # loss = torch.nn.functional.nll_loss(torch.masked_select(output, mask[:, :, None]).view(256, -1).t(),
+        # target.masked_select(mask), reduction='mean')
         to_log = {'loss': loss.item(), 'lr': scheduler.get_last_lr()[0]}
         print('wandblog', to_log)
         wandb.log(to_log)
@@ -227,6 +230,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument('-Y', '--save-every', default=1,
                         type=int, dest='save_every')
     parser.add_argument('--save-dir', dest='save_dir', type=str, default='./saved_models')
+    parser.add_argument('--watch-model', dest='watch_model', action='store_true')
     options = parser.parse_args()
     print(options)
     return options
