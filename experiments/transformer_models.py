@@ -97,8 +97,6 @@ class SparseTransformer(nn.Module):
         super().__init__()
         self.context_len = context_len
         self.vocab_size = vocab_size
-        # Here we add 1 to emb because an additional coord is used for positional embeddings but only added
-        # here in the root Transformer
         self.token_embedding = nn.Embedding(num_embeddings=vocab_size, embedding_dim=emb)
         self.pos_embedding = nn.Embedding(num_embeddings=context_len, embedding_dim=emb)
         t_blocks = [TransformerBlock(context_len, emb, *args, **kwargs) for _ in range(n_blocks)]

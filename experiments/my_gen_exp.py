@@ -167,7 +167,9 @@ def train(args: argparse.Namespace):
         if cuda:
             source, target = source.cuda(), target.cuda()
         instances_seen += source.size(0)
-        output = model(source)
+        logits = model(source)
+        output = torch.nn.functional.log_softmax(logits, dim=-1)
+        breakpoint()
         loss = torch.nn.functional.nll_loss(output.transpose(2, 1), target, reduction='mean')
         to_log = {'loss': loss.item(), 'lr': scheduler.get_last_lr()[0]}
         print('wandblog', to_log)
