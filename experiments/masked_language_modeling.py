@@ -169,9 +169,12 @@ def train(args: argparse.Namespace):
             print('wandblog', to_log)
             wandb.log(to_log)
             _, (ms, ss, _) = model.forward_for_plot(source)
+            # breakpoint()
             # Iterate through the layers of the model
             for layer, (m, s) in enumerate(zip(ms, ss)):
-                context = m.size(1)
+                m = m[0]
+                s = s[0]
+                context = m.size(0)
                 m = m.view(-1, 2)
                 s = s.view(-1)
                 attention_viz(m, s, (context, context), save_file=f'{args.save_dir}/{n_validated//args.save_every}_attention_{layer}.pdf')

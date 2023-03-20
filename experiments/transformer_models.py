@@ -5,7 +5,10 @@ from _context import sparse
 from sparse import util
 
 from attention_layers import (
-    SparseSelfAttention, BlocksparseFixedSelfAttention, MultiHeadAttention, ReallySparseAttention
+    SparseSelfAttention, 
+    BlocksparseFixedSelfAttention, 
+    MultiHeadAttention, 
+    ReallySparseAttention,
 )
 
 try:
