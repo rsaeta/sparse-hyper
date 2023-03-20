@@ -144,14 +144,6 @@ def train(args: argparse.Namespace):
         instances_seen += source.size(0)
 
         output = model(source)
-        if i % 100 == 99:
-            _, (ms, ss, _) = model.forward_for_plot(source)
-            # Iterate through the layers of the model
-            for layer, m, s in enumerate(zip(ms, ss)):
-                context = m.size(1)
-                m = m.view(-1, 2)
-                s = s.view(-1)
-                attention_viz(m, s, (context, context), save_file=f'{i}_attention_{layer}.png')
         loss = torch.nn.functional.nll_loss(output[mask.nonzero(as_tuple=True)],
                                             target[mask.nonzero(as_tuple=True)], reduction='mean')
         to_log = {'loss': loss.item(), 'lr': scheduler.get_last_lr()[0]}
@@ -176,6 +168,13 @@ def train(args: argparse.Namespace):
             to_log = {'validation_loss': loss.item()}
             print('wandblog', to_log)
             wandb.log(to_log)
+            _, (ms, ss, _) = model.forward_for_plot(source)
+            # Iterate through the layers of the model
+            for layer, m, s in enumerate(zip(ms, ss)):
+                context = m.size(1)
+                m = m.view(-1, 2)
+                s = s.view(-1)
+                attention_viz(m, s, (context, context), save_file=f'{args.save_dir}/attention_{n_validated//args.save_every}.pdf')
             if n_validated % args.save_every == 0:
                 f_name = f'{args.save_dir}/checkpoint_{n_validated//args.save_every}.pt'
                 torch.save(model.state_dict(), f_name)
