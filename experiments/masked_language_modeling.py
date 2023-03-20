@@ -170,11 +170,11 @@ def train(args: argparse.Namespace):
             wandb.log(to_log)
             _, (ms, ss, _) = model.forward_for_plot(source)
             # Iterate through the layers of the model
-            for layer, m, s in enumerate(zip(ms, ss)):
+            for layer, (m, s) in enumerate(zip(ms, ss)):
                 context = m.size(1)
                 m = m.view(-1, 2)
                 s = s.view(-1)
-                attention_viz(m, s, (context, context), save_file=f'{args.save_dir}/attention_{n_validated//args.save_every}.pdf')
+                attention_viz(m, s, (context, context), save_file=f'{args.save_dir}/{n_validated//args.save_every}_attention_{layer}.pdf')
             if n_validated % args.save_every == 0:
                 f_name = f'{args.save_dir}/checkpoint_{n_validated//args.save_every}.pt'
                 torch.save(model.state_dict(), f_name)
