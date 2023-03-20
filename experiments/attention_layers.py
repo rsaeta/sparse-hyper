@@ -368,7 +368,7 @@ class Head(nn.Module):
         # breakpoint()
         if self.mask:
             wei = wei.masked_fill(self.tril[:T, :T] == 0, float('-inf')) # (B, T, T)
-            wei = torch.nn.functional.softmax(wei, dim=-1) # (B, T, T)
+        wei = torch.nn.functional.softmax(wei, dim=-1) # (B, T, T)
         wei = self.dropout(wei)
         # perform the weighted aggregation of the values
         v = self.value(x) # (B,T,hs)

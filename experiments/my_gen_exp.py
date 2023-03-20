@@ -30,6 +30,7 @@ def get_model(args: argparse.Namespace) -> GeneratingTransformer:
         nadditional=args.nadditional,
         gadditional=args.gadditional,
         attention_type=args.attention_type,
+        mask=True
     )
 
 
