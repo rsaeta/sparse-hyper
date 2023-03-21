@@ -132,14 +132,6 @@ def train(args: argparse.Namespace):
                                                   lambda i: min(1, (i+1)/args.lr_warmup))
     instances_seen = 0
     data_train, data_val, data_test = enwik8(args.data)
-    # For imbalanced datasets as we have here, we would like to weight the classes proportional 
-    # to their instance counts
-    loss_weights = torch.bincount(data_train)
-    pad = torch.zeros((NUM_TOKENS - loss_weights.size(0), ))
-    loss_weights = 1. / (torch.cat([loss_weights, pad]) + 0.1)
-
-    if cuda:
-        loss_weights = loss_weights.cuda()
     if args.watch_model:
         wandb.watch(model)
     # We want the mask token index to not be a token in the actual data.
@@ -161,7 +153,6 @@ def train(args: argparse.Namespace):
         output = torch.nn.functional.log_softmax(logits, dim=-1)
         loss = torch.nn.functional.nll_loss(output.transpose(2, 1), #.view(-1, NUM_TOKENS),#[mask.nonzero(as_tuple=True)],
                                             target, #.view(-1),
-                                            weight=loss_weights,
                                             reduction='mean')#[mask.nonzero(as_tuple=True)], reduction='mean')
         to_log = {'loss': loss.item(), 'lr': scheduler.get_last_lr()[0]}
         print('wandblog', to_log)
