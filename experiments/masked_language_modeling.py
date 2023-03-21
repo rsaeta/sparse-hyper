@@ -1,7 +1,6 @@
 import argparse
 import json
-from exp_args import parse_args
-from functools import partial
+from experiment_utils import parse_args, get_model, learners, cuda, setup
 import os
 
 import torch
@@ -18,31 +17,6 @@ from plot_utils import attention_viz
 # NB, the enwik8 data contains tokens from 9 to 240, but well round up to the nearest
 # power of two.
 NUM_TOKENS = 256
-
-cuda = torch.cuda.is_available()
-print(f'Cuda is: {cuda}')
-
-
-def get_model(args: argparse.Namespace) -> GeneratingTransformer:
-    model = GeneratingTransformer(
-        args.depth,
-        args.context,
-        args.embedding,
-        NUM_TOKENS,
-        k=args.num_indices,
-        heads=args.n_heads,
-        nadditional=args.nadditional,
-        gadditional=args.gadditional,
-        attention_type=args.attention_type,
-        mask=False,
-    )
-    if args.load_model is not None:
-        state_dict = torch.load(args.load_model, map_location=torch.device('cuda') \
-                                if cuda else torch.device('cpu'))
-        model.load_state_dict(state_dict)
-    if cuda:
-        model = model.cuda()
-    return model
 
 
 def sample(lnprobs, temperature=1.0):
@@ -116,28 +90,12 @@ def init_wandb(args):
     )
 
 
-def setup(args: argparse.Namespace):
-    save_dir = args.save_dir
-    if not os.path.isdir(save_dir):
-        os.mkdir(save_dir)
-    with open(os.path.join(save_dir, 'config.json'), 'w') as f:
-        json.dump(vars(args), f)
-
-def lr(args, i):
-    if i < args.lr_warmup:
-        return (i+1)/args.lr_warmup
-    else:
-        return 1 - i/args.num_batches
-
-
 def train(args: argparse.Namespace):
     model = get_model(args)
     setup(args)
     if cuda:
         model.cuda()
-    optimizer = torch.optim.Adam(lr=args.learning_rate, params=model.parameters())
-    scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer,
-                                                  partial(lr, args))
+    optimizer, scheduler = learners(model, args)
     instances_seen = 0
     data_train, data_val, data_test = enwik8(args.data)
     if args.watch_model:

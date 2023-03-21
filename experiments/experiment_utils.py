@@ -1,4 +1,14 @@
+import os
+import json
+import torch
+from functools import partial
+from transformer_models import GeneratingTransformer
 from argparse import Namespace, ArgumentParser
+import gzip
+import numpy as np
+
+
+cuda = torch.cuda.is_available()
 
 
 def parse_args() -> Namespace:
@@ -63,3 +73,64 @@ def parse_args() -> Namespace:
     options = parser.parse_args()
     print(options)
     return options
+
+
+def get_model(args: Namespace) -> GeneratingTransformer:
+    model = GeneratingTransformer(
+        args.depth,
+        args.context,
+        args.embedding,
+        256,
+        k=args.num_indices,
+        heads=args.n_heads,
+        nadditional=args.nadditional,
+        gadditional=args.gadditional,
+        attention_type=args.attention_type,
+        mask=False,
+    )
+    if args.load_model is not None:
+        state_dict = torch.load(args.load_model, map_location=torch.device('cuda') \
+                                if cuda else torch.device('cpu'))
+        model.load_state_dict(state_dict)
+    if cuda:
+        model = model.cuda()
+    return model
+
+
+
+def enwik8(path, n_train=int(90e6), n_valid=int(5e6), n_test=int(5e6)):
+    """
+    Load the enwik8 dataset from the Hutter challenge.
+    Adapted from https://github.com/openai/blocksparse/blob/master/examples/transformer/enwik8.py
+    :param path:
+    :param n_train:
+    :param n_valid:
+    :param n_test:
+    :return:
+    """
+    with gzip.open(path) if path.endswith('.gz') else open(path) as file:
+        X = np.fromstring(file.read(n_train + n_valid + n_test), dtype=np.uint8)
+        trX, vaX, teX = np.split(X, [n_train, n_train + n_valid])
+        return torch.from_numpy(trX), torch.from_numpy(vaX), torch.from_numpy(teX)
+
+
+def lr(args, i):
+    if i < args.lr_warmup:
+        return (i+1)/args.lr_warmup
+    else:
+        return 1 - i/args.num_batches
+
+
+def learners(model, args):
+    optimizer = torch.optim.Adam(lr=args.learning_rate, params=model.parameters())
+    scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer,
+                                                  partial(lr, args))
+    return optimizer, scheduler
+
+
+def setup(args: Namespace):
+    save_dir = args.save_dir
+    if not os.path.isdir(save_dir):
+        os.mkdir(save_dir)
+    with open(os.path.join(save_dir, 'config.json'), 'w') as f:
+        json.dump(vars(args), f)
