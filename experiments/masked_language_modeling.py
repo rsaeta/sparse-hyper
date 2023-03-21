@@ -136,7 +136,8 @@ def train(args: argparse.Namespace):
     # to their instance counts
     loss_weights = torch.bincount(data_train)
     pad = torch.zeros((NUM_TOKENS - loss_weights.size(0), ))
-    loss_weights = torch.cat([loss_weights, pad])
+    loss_weights = 1. / (torch.cat([loss_weights, pad]) + 0.1)
+
     if cuda:
         loss_weights = loss_weights.cuda()
     if args.watch_model:
