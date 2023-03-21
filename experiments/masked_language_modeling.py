@@ -23,7 +23,7 @@ print(f'Cuda is: {cuda}')
 
 
 def get_model(args: argparse.Namespace) -> GeneratingTransformer:
-    return GeneratingTransformer(
+    model = GeneratingTransformer(
         args.depth,
         args.context,
         args.embedding,
@@ -35,6 +35,12 @@ def get_model(args: argparse.Namespace) -> GeneratingTransformer:
         attention_type=args.attention_type,
         mask=False,
     )
+    # breakpoint()
+    if args.load_model is not None:
+        state_dict = torch.load(args.load_model, map_location=torch.device('cuda') \
+                                if cuda else torch.device('cpu'))
+        model.load_state_dict(state_dict)
+    return model
 
 
 def sample(lnprobs, temperature=1.0):
@@ -126,6 +132,11 @@ def train(args: argparse.Namespace):
                                                   lambda i: min(1, (i+1)/args.lr_warmup))
     instances_seen = 0
     data_train, data_val, data_test = enwik8(args.data)
+    # For imbalanced datasets as we have here, we would like to weight the classes proportional 
+    # to their instance counts
+    loss_weights = torch.bincount(data_train)
+    pad = torch.zeros((NUM_TOKENS - loss_weights.size(0), ))
+    loss_weights = torch.cat([loss_weights, pad])
     if args.watch_model:
         wandb.watch(model)
     # We want the mask token index to not be a token in the actual data.
@@ -147,6 +158,7 @@ def train(args: argparse.Namespace):
         output = torch.nn.functional.log_softmax(logits, dim=-1)
         loss = torch.nn.functional.nll_loss(output.transpose(2, 1), #.view(-1, NUM_TOKENS),#[mask.nonzero(as_tuple=True)],
                                             target, #.view(-1),
+                                            weight=loss_weights,
                                             reduction='mean')#[mask.nonzero(as_tuple=True)], reduction='mean')
         to_log = {'loss': loss.item(), 'lr': scheduler.get_last_lr()[0]}
         print('wandblog', to_log)
@@ -245,6 +257,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument('--save-dir', dest='save_dir', type=str, default='./saved_models')
     parser.add_argument('--watch-model', dest='watch_model', action='store_true')
     parser.add_argument('--plot-attention', dest='plot_attention', action='store_true')
+    parser.add_argument('--load-model', dest='load_model',
+                        default=None, type=str)
     options = parser.parse_args()
     print(options)
     return options
