@@ -137,6 +137,8 @@ def train(args: argparse.Namespace):
     loss_weights = torch.bincount(data_train)
     pad = torch.zeros((NUM_TOKENS - loss_weights.size(0), ))
     loss_weights = torch.cat([loss_weights, pad])
+    if cuda:
+        loss_weights = loss_weights.cuda()
     if args.watch_model:
         wandb.watch(model)
     # We want the mask token index to not be a token in the actual data.
