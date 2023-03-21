@@ -181,8 +181,8 @@ def train(args: argparse.Namespace):
             instances_seen += source.size(0)
             logits = model(source)
             output = torch.nn.functional.log_softmax(logits, dim=-1)
-            loss = torch.nn.functional.nll_loss(output[mask.nonzero(as_tuple=True)].t(),
-                                                target[mask.nonzero(as_tuple=True)],
+            loss = torch.nn.functional.nll_loss(output[mask],
+                                                target[mask],
                                                 reduction='mean')
             to_log = {'validation_loss': loss.item()}
             print('wandblog', to_log)
