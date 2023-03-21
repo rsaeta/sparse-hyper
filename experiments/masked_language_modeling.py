@@ -36,11 +36,12 @@ def get_model(args: argparse.Namespace) -> GeneratingTransformer:
         attention_type=args.attention_type,
         mask=False,
     )
-    # breakpoint()
     if args.load_model is not None:
         state_dict = torch.load(args.load_model, map_location=torch.device('cuda') \
                                 if cuda else torch.device('cpu'))
         model.load_state_dict(state_dict)
+    if cuda:
+        model = model.cuda()
     return model
 
 
@@ -158,9 +159,9 @@ def train(args: argparse.Namespace):
 
         logits = model(source)
         output = torch.nn.functional.log_softmax(logits, dim=-1)
-        loss = torch.nn.functional.nll_loss(output.transpose(2, 1), #.view(-1, NUM_TOKENS),#[mask.nonzero(as_tuple=True)],
-                                            target, #.view(-1),
-                                            reduction='mean')#[mask.nonzero(as_tuple=True)], reduction='mean')
+        loss = torch.nn.functional.nll_loss(output[mask],
+                                            target[mask],
+                                            reduction='mean')
         to_log = {'loss': loss.item(), 'lr': scheduler.get_last_lr()[0]}
         print('wandblog', to_log)
         wandb.log(to_log)
@@ -180,9 +181,9 @@ def train(args: argparse.Namespace):
             instances_seen += source.size(0)
             logits = model(source)
             output = torch.nn.functional.log_softmax(logits, dim=-1)
-            loss = torch.nn.functional.nll_loss(output.transpose(2, 1), #.view(-1, NUM_TOKENS),#[mask.nonzero(as_tuple=True)],
-                                                target, #.view(-1),
-                                                reduction='mean')#[mask.nonzero(as_tuple=True)], reduction='mean')
+            loss = torch.nn.functional.nll_loss(output[mask.nonzero(as_tuple=True)].t(),
+                                                target[mask.nonzero(as_tuple=True)],
+                                                reduction='mean')
             to_log = {'validation_loss': loss.item()}
             print('wandblog', to_log)
             wandb.log(to_log)
@@ -260,13 +261,39 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument('--plot-attention', dest='plot_attention', action='store_true')
     parser.add_argument('--load-model', dest='load_model',
                         default=None, type=str)
+    parser.add_argument('--interact', default=False, action='store_true')
     options = parser.parse_args()
     print(options)
     return options
 
 
+def ttos(t: torch.Tensor) -> str:
+    return ''.join(map(chr, t))
+
+
+def interact(args):
+    model = get_model(args)
+    data_train, data_val, data_test = enwik8(args.data)
+    mask_token_index = torch.cat([data_train, data_val, data_test], dim=0).max().item() + 1
+    source, target, mask = sample_batch(data_train,
+                                        length=args.context,
+                                        batch_size=args.batch_size,
+                                        mask_token=mask_token_index)
+    if cuda:
+        source, target, mask = source.cuda(), target.cuda(), mask.cuda()
+
+    logits = model(source)
+    output = torch.nn.functional.log_softmax(logits, dim=-1)
+    preds = torch.argmax(output, dim=-1)
+    breakpoint()
+    print('\n'.join(map(ttos, [target[0], source[0], preds[0]])))
+
+
 def main():
     args = parse_args()
+    if args.interact:
+        interact(args)
+        return
     init_wandb(args)
     train(args)
     wandb.finish()
