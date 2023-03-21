@@ -1,6 +1,7 @@
 import argparse
 import json
 from argparse import ArgumentParser
+from functools import partial
 import os
 
 import torch
@@ -121,6 +122,12 @@ def setup(args: argparse.Namespace):
     with open(os.path.join(save_dir, 'config.json'), 'w') as f:
         json.dump(vars(args), f)
 
+def lr(args, i):
+    if i < args.lr_warmup:
+        return (i+1)/args.lr_warmup
+    else:
+        return 1 - i/args.num_batches
+
 
 def train(args: argparse.Namespace):
     model = get_model(args)
@@ -129,7 +136,7 @@ def train(args: argparse.Namespace):
         model.cuda()
     optimizer = torch.optim.Adam(lr=args.learning_rate, params=model.parameters())
     scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer,
-                                                  lambda i: min(1, (i+1)/args.lr_warmup))
+                                                  partial(lr, args))
     instances_seen = 0
     data_train, data_val, data_test = enwik8(args.data)
     if args.watch_model:
