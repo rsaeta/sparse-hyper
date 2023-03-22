@@ -1,17 +1,12 @@
 import argparse
-import json
-from experiment_utils import parse_args, get_model, learners, cuda, setup
-import os
+from experiment_utils import parse_args, get_model, learners, cuda, setup, enwik8
 
 import torch
 import torch.nn.functional as F
 import torch.distributions as dist
-import numpy as np
-import gzip
 
 import wandb
 
-from transformer_models import GeneratingTransformer
 from plot_utils import attention_viz
 
 # NB, the enwik8 data contains tokens from 9 to 240, but well round up to the nearest
@@ -37,22 +32,6 @@ def sample(lnprobs, temperature=1.0):
     return cd.sample()
 
 
-def enwik8(path, n_train=int(90e6), n_valid=int(5e6), n_test=int(5e6)):
-    """
-    Load the enwik8 dataset from the Hutter challenge.
-    Adapted from https://github.com/openai/blocksparse/blob/master/examples/transformer/enwik8.py
-    :param path:
-    :param n_train:
-    :param n_valid:
-    :param n_test:
-    :return:
-    """
-    with gzip.open(path) if path.endswith('.gz') else open(path) as file:
-        X = np.fromstring(file.read(n_train + n_valid + n_test), dtype=np.uint8)
-        trX, vaX, teX = np.split(X, [n_train, n_train + n_valid])
-        return torch.from_numpy(trX), torch.from_numpy(vaX), torch.from_numpy(teX)
-
-
 def sample_batch(data, length, batch_size, mask_token, mask_p=0.15):
     """
     Takes the data (a single sequence of tokens) and slices out a batch of subsequences to provide as input to the model
@@ -69,7 +48,7 @@ def sample_batch(data, length, batch_size, mask_token, mask_p=0.15):
     starts = torch.randint(size=(batch_size,), low=0, high=data.size(0) - length - 1)
 
     # Slice out the input sequences
-    seqs_inputs = torch.cat([data[None, start:start + length] for start in starts]).long()
+    seqs_inputs = torch.cat([data[start:start + length][None, :] for start in starts]).long()
     mask = torch.rand(seqs_inputs.size()) < mask_p
     targets = seqs_inputs.clone()
     seqs_inputs.masked_fill_(mask, mask_token)
@@ -91,7 +70,7 @@ def init_wandb(args):
 
 
 def train(args: argparse.Namespace):
-    model = get_model(args)
+    model = get_model(args, mask=False)
     setup(args)
     if cuda:
         model.cuda()
@@ -117,9 +96,11 @@ def train(args: argparse.Namespace):
 
         logits = model(source)
         output = torch.nn.functional.log_softmax(logits, dim=-1)
-        loss = torch.nn.functional.nll_loss(output[mask],
-                                            target[mask],
-                                            reduction='mean')
+
+        loverall = torch.nn.functional.nll_loss(output.transpose(1, 2),
+                                            target,
+                                            reduction='none')
+        loss = (loverall*mask).mean()
         to_log = {'loss': loss.item(), 'lr': scheduler.get_last_lr()[0]}
         print('wandblog', to_log)
         wandb.log(to_log)
@@ -139,9 +120,10 @@ def train(args: argparse.Namespace):
             instances_seen += source.size(0)
             logits = model(source)
             output = torch.nn.functional.log_softmax(logits, dim=-1)
-            loss = torch.nn.functional.nll_loss(output[mask],
-                                                target[mask],
-                                                reduction='mean')
+            loss = torch.nn.functional.nll_loss(output.transpose(1, 2),
+                                                target,
+                                                reduction='none')
+            loss = loss * ~mask
             to_log = {'validation_loss': loss.item()}
             print('wandblog', to_log)
             wandb.log(to_log)

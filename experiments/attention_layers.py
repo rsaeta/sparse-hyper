@@ -403,4 +403,4 @@ class NativeAttention(nn.Module):
             out, _ = self.native_attention(x.transpose(0, 1), x.transpose(0, 1), x.transpose(0, 1), attn_mask=mask)
         else:
             out, _ = self.native_attention(x.transpose(0, 1), x.transpose(0, 1), x.transpose(0, 1))
-        return out
+        return out.transpose(0, 1)
