@@ -14,24 +14,6 @@ from plot_utils import attention_viz
 NUM_TOKENS = 256
 
 
-def sample(lnprobs, temperature=1.0):
-    """
-    Sample an element from a categorical distribution
-    :param lnprobs: Outcome log-probabilities
-    :param temperature: Sampling temperature. 1.0 follows the given distribution,
-        0.0 returns the maximum probability element.
-    :return: The index of the sampled element.
-    """
-
-    if temperature == 0.0:
-        return lnprobs.argmax()
-
-    p = F.softmax(lnprobs / temperature, dim=0)
-    cd = dist.Categorical(p)
-
-    return cd.sample()
-
-
 def sample_batch(data, length, batch_size, mask_token, mask_p=0.15):
     """
     Takes the data (a single sequence of tokens) and slices out a batch of subsequences to provide as input to the model
@@ -50,7 +32,7 @@ def sample_batch(data, length, batch_size, mask_token, mask_p=0.15):
     # Slice out the input sequences
     seqs_inputs = torch.cat([data[start:start + length][None, :] for start in starts]).long()
     mask = torch.rand(seqs_inputs.size()) < mask_p
-    targets = seqs_inputs.clone()
+    targets = seqs_inputs.detach().clone()
     seqs_inputs.masked_fill_(mask, mask_token)
 
     return seqs_inputs, targets, mask
@@ -90,17 +72,20 @@ def train(args: argparse.Namespace):
                                             length=args.context,
                                             batch_size=args.batch_size,
                                             mask_token=mask_token_index)
+        # breakpoint()
         if cuda:
             source, target, mask = source.cuda(), target.cuda(), mask.cuda()
         instances_seen += source.size(0)
 
         logits = model(source)
-        output = torch.nn.functional.log_softmax(logits, dim=-1)
+        # output = torch.nn.functional.log_softmax(logits, dim=-1)
 
-        loverall = torch.nn.functional.nll_loss(output.transpose(1, 2),
-                                            target,
-                                            reduction='none')
-        loss = (loverall*mask).mean()
+        # loverall = torch.nn.functional.nll_loss(output.transpose(1, 2),
+        #                                     target,
+        #                                     reduction='none')
+        # loss = (loverall*mask).mean()
+
+        loss = torch.nn.functional.cross_entropy(logits.reshape(-1, NUM_TOKENS), target.reshape(-1), reduction='mean')
         to_log = {'loss': loss.item(), 'lr': scheduler.get_last_lr()[0]}
         print('wandblog', to_log)
         wandb.log(to_log)
@@ -119,11 +104,13 @@ def train(args: argparse.Namespace):
                 source, target, mask = source.cuda(), target.cuda(), mask.cuda()
             instances_seen += source.size(0)
             logits = model(source)
-            output = torch.nn.functional.log_softmax(logits, dim=-1)
-            loss = torch.nn.functional.nll_loss(output.transpose(1, 2),
-                                                target,
-                                                reduction='none')
-            loss = (loss*mask).mean()
+            # breakpoint()
+            # output = torch.nn.functional.log_softmax(logits, dim=-1)
+            # loss = torch.nn.functional.nll_loss(output.reshape(-1, NUM_TOKENS),
+                                                # target,
+                                                # reduction='none')
+            # loss = (loss*mask).mean()
+            loss = torch.nn.functional.cross_entropy(logits, target, reduction='mean')
             to_log = {'validation_loss': loss.item()}
             print('wandblog', to_log)
             wandb.log(to_log)
