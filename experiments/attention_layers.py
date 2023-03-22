@@ -399,7 +399,7 @@ class NativeAttention(nn.Module):
     
     def forward(self, x: Tensor) -> Tensor:
         if self.mask:
-            mask = torch.nn.Transformer.generate_square_subsequent_mask(x.size(1), device=util.d(x))
+            mask = torch.nn.Transformer.generate_square_subsequent_mask(x.size(1)).to(util.d(x))
             out, _ = self.native_attention(x, x, x, attn_mask=mask)
         else:
             out, _ = self.native_attention(x, x, x)
