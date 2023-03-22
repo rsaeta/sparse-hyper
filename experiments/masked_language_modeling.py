@@ -65,6 +65,7 @@ def train(args: argparse.Namespace):
     mask_token_index = torch.cat([data_train, data_val, data_test], dim=0).max().item() + 1
     n_validated = 0
     data_train, data_test = (data_train, data_val)
+    # breakpoint()
     for i in range(args.num_batches):
         model.train(True)
         optimizer.zero_grad()
@@ -84,8 +85,8 @@ def train(args: argparse.Namespace):
         #                                     target,
         #                                     reduction='none')
         # loss = (loverall*mask).mean()
-
-        loss = torch.nn.functional.cross_entropy(logits.reshape(-1, NUM_TOKENS), target.reshape(-1), reduction='mean')
+    
+        loss = torch.nn.functional.cross_entropy(logits[mask].reshape(-1, NUM_TOKENS), target[mask].reshape(-1), reduction='mean')
         to_log = {'loss': loss.item(), 'lr': scheduler.get_last_lr()[0]}
         print('wandblog', to_log)
         wandb.log(to_log)
@@ -110,7 +111,7 @@ def train(args: argparse.Namespace):
                                                 # target,
                                                 # reduction='none')
             # loss = (loss*mask).mean()
-            loss = torch.nn.functional.cross_entropy(logits, target, reduction='mean')
+            loss = torch.nn.functional.cross_entropy(logits[mask].reshape(-1, NUM_TOKENS), target[mask].reshape(-1), reduction='mean')
             to_log = {'validation_loss': loss.item()}
             print('wandblog', to_log)
             wandb.log(to_log)
