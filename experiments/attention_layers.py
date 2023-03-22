@@ -389,3 +389,19 @@ class MultiHeadAttention(nn.Module):
         out = torch.cat([h(x) for h in self.heads], dim=-1)
         out = self.dropout(self.proj(out))
         return out
+
+
+class NativeAttention(nn.Module):
+    def __init__(self, num_heads, emb, context, mask, **kwargs):
+        super().__init__()
+        self.mask = mask
+        if mask:
+            self.tril = torch.tril(torch.ones((context, context)))
+        self.native_attention = nn.MultiheadAttention(emb, num_heads, batch_first=True)
+    
+    def forward(self, x: Tensor) -> Tensor:
+        if self.mask:
+            out, _ = self.native_attention(x, x, x, need_weights=False, attn_mask=self.tril)
+        else:
+            out, _ = self.native_attention(x, x, x, need_weights=False)
+        return out

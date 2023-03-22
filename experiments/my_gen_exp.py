@@ -74,7 +74,7 @@ def init_wandb(args):
 
 
 def train(args: argparse.Namespace):
-    model = get_model(args)
+    model = get_model(args, mask=True)
     if cuda:
         model.cuda()
     optimizer, scheduler = learners(model, args)

@@ -9,6 +9,7 @@ from attention_layers import (
     BlocksparseFixedSelfAttention, 
     MultiHeadAttention, 
     ReallySparseAttention,
+    NativeAttention,
 )
 
 try:
@@ -27,7 +28,7 @@ class TransformerBlock(nn.Module):
                  heads: int = 4,
                  ff_hidden_mult: int = 4,
                  dropout: float = 0.0,
-                 attention_type: Literal['dense', 'sparse', 'fixed'] = 'dense',
+                 attention_type: Literal['dense', 'sparse', 'fixed', 'sparse2d', 'native'] = 'dense',
                  **kwargs):
         super().__init__()
         if attention_type == 'dense':
@@ -38,6 +39,8 @@ class TransformerBlock(nn.Module):
             self.attend = BlocksparseFixedSelfAttention(emb, t=context, **kwargs)
         elif attention_type == 'sparse2d':
             self.attend = ReallySparseAttention(emb, context, n_heads=heads, **kwargs)
+        elif attention_type == 'native':
+            self.attend = NativeAttention(heads, emb, context, **kwargs)
         else:
             raise ValueError(f'attention_type {attention_type} not recognized')
 
@@ -51,13 +54,16 @@ class TransformerBlock(nn.Module):
         )
 
     def forward(self, x: Tensor) -> Tensor:
-        normed1 = self.norm1(x)
-        attended = self.attend(normed1)
-        x = x + attended
-        x = self.dropout(x)
-        normed2 = self.norm2(x)
-        x = x + self.ff(normed2)
-        return self.dropout(x)
+        x = self.dropout(x + self.attend(self.norm1(x)))
+        x = self.dropout(x + self.ff(self.norm2(x)))
+        return x
+        # normed1 = self.norm1(x)
+        # attended = self.attend(normed1)
+        # x = x + attended
+        # x = self.dropout(x)
+        # normed2 = self.norm2(x)
+        # x = x + self.ff(normed2)
+        # return self.dropout(x)
 
     def forward_for_plot(self, x: Tensor) -> Tuple[Tensor, Tuple[Tensor, Tensor, Tensor]]:
         normed1 = self.norm1(x)

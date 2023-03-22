@@ -166,7 +166,7 @@ def ttos(t: torch.Tensor) -> str:
 
 
 def interact(args):
-    model = get_model(args)
+    model = get_model(args, mask=False)
     data_train, data_val, data_test = enwik8(args.data)
     mask_token_index = torch.cat([data_train, data_val, data_test], dim=0).max().item() + 1
     source, target, mask = sample_batch(data_train,

@@ -58,7 +58,7 @@ def parse_args() -> Namespace:
                         dest='gadditional', default=2, type=int)
     parser.add_argument('-V', '--validation-every', default=200,
                         dest='validation_every', type=int)
-    parser.add_argument('-A', '--attention-type', choices=['dense', 'sparse', 'fixed', 'sparse2d'],
+    parser.add_argument('-A', '--attention-type', choices=['dense', 'sparse', 'fixed', 'sparse2d', 'native'],
                         dest='attention_type', default='dense', type=str)
     parser.add_argument('-L', '--clipping-value', type=float,
                         dest='clipping_value', default=1.0)
@@ -75,7 +75,7 @@ def parse_args() -> Namespace:
     return options
 
 
-def get_model(args: Namespace) -> GeneratingTransformer:
+def get_model(args: Namespace, mask: bool = False) -> GeneratingTransformer:
     model = GeneratingTransformer(
         args.depth,
         args.context,
@@ -86,7 +86,7 @@ def get_model(args: Namespace) -> GeneratingTransformer:
         nadditional=args.nadditional,
         gadditional=args.gadditional,
         attention_type=args.attention_type,
-        mask=False,
+        mask=mask,
     )
     if args.load_model is not None:
         state_dict = torch.load(args.load_model, map_location=torch.device('cuda') \
@@ -108,6 +108,10 @@ def enwik8(path, n_train=int(90e6), n_valid=int(5e6), n_test=int(5e6)):
     :param n_test:
     :return:
     """
+    file_stats = os.stat(path)
+    size = file_stats.st_size
+    n_train = int(size*.9)
+    n_valid = n_test = int(size*.05)
     with gzip.open(path) if path.endswith('.gz') else open(path) as file:
         X = np.fromstring(file.read(n_train + n_valid + n_test), dtype=np.uint8)
         trX, vaX, teX = np.split(X, [n_train, n_train + n_valid])
