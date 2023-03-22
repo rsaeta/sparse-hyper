@@ -395,12 +395,12 @@ class NativeAttention(nn.Module):
     def __init__(self, num_heads, emb, context, mask, **kwargs):
         super().__init__()
         self.mask = mask
-        self.native_attention = nn.MultiheadAttention(emb, num_heads, batch_first=True)
+        self.native_attention = nn.MultiheadAttention(emb, num_heads)
     
     def forward(self, x: Tensor) -> Tensor:
         if self.mask:
             mask = torch.nn.Transformer.generate_square_subsequent_mask(x.size(1), device=util.d(x))
-            out, _ = self.native_attention(x, x, x, need_weights=False, attn_mask=mask)
+            out, _ = self.native_attention(x, x, x, attn_mask=mask)
         else:
-            out, _ = self.native_attention(x, x, x, need_weights=False)
+            out, _ = self.native_attention(x, x, x)
         return out
