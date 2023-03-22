@@ -123,7 +123,7 @@ def train(args: argparse.Namespace):
             loss = torch.nn.functional.nll_loss(output.transpose(1, 2),
                                                 target,
                                                 reduction='none')
-            loss = loss * ~mask
+            loss = (loss*mask).mean()
             to_log = {'validation_loss': loss.item()}
             print('wandblog', to_log)
             wandb.log(to_log)
