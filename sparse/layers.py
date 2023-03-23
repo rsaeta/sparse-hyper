@@ -94,7 +94,6 @@ def transform_means(means, size, method='sigmoid'):
     :param size: Tuple describing the tensor dimensions.
     :return: (..., rank)
     """
-
     # Compute upper bounds
     s = torch.tensor(list(size), dtype=torch.float, device=d(means)) - 1
     s = util.unsqueezen(s, len(means.size()) - 1)

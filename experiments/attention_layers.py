@@ -106,7 +106,8 @@ class ReallySparseAttention(nn.Module):
                  hidden: int = 4,
                  n_heads: int = 4,
                  gadditional: int = 2,
-                 nadditional: int = 2):
+                 nadditional: int = 2,
+                 mask: bool = True):
         super().__init__()
         self.n_heads = n_heads
         self.context_len = context_len
@@ -117,6 +118,7 @@ class ReallySparseAttention(nn.Module):
         self.to_keys = nn.Linear(emb, emb * n_heads, bias=False)
         self.to_queries = nn.Linear(emb, emb * n_heads, bias=False)
         self.to_values = nn.Linear(emb, emb * n_heads, bias=False)
+        self.mask = mask
         self.unify = nn.Linear(emb * n_heads, emb)
         self.register_buffer('mvalues', torch.ones((k,)))
         self.to_param = nn.Sequential(
@@ -135,14 +137,15 @@ class ReallySparseAttention(nn.Module):
 
         # Generate the logits that correspond to the horizontal coordinate of the current word
         diags = torch.arange(context_len, device=util.d(x), dtype=torch.float)
-        diags = util.inv(diags, mx=context_len)
+        # diags = util.inv(diags, mx=context_len)
         diags = diags[None, :, None, None].expand(batch_size, -1, self.k, 1)  # (B, C, K, 1)
 
         means = params[:, :, :self.k*2].view(batch_size, -1, self.k, 2)  # mean for current point  (B, C, K, 2)
         sigmas = params[:, :, self.k*2:].view(batch_size, -1, self.k)  # (B, C, K)  # 1 sigma for current point
         values = self.mvalues[None, None, :].expand(batch_size, context_len, -1)  # Expand to all points (B, C, K)
         means = diags + means
-        means = util.flip(means)
+        if self.mask:
+            means = util.flip(means)
         means = sparse.transform_means(means, (context_len,))
         sigmas = sparse.transform_sigmas(sigmas, (context_len,))
         return means, sigmas, values
@@ -160,7 +163,8 @@ class ReallySparseAttention(nn.Module):
         assert ((indices < 0).sum().item() == 0) and ((indices >= context).sum().item() == 0), \
             f'Found some indices out of bounds: indices < 0: {(indices < 0).sum().item()}; ' \
             f'indices >= {context}: {(indices >= context).sum().item()}'
-        indices = util.flip(indices)
+        if self.mask:
+            indices = util.flip(indices)
         indices_fl = indices.float()
         # For each point (self.k), we expect to sample the 2**rank closest points from the first set of sampling,
         # then self.gadditional globally-sampled indices, and self.nadditional neighborhood-sampled indices.
@@ -208,7 +212,6 @@ class ReallySparseAttention(nn.Module):
         indices2 = torch.cat([batch_is[:, None], indices.view(-1, 2)], dim=-1)
         dot = util.calc_vals(Q, K.transpose(-2, -1), indices2).view(batch2, -1)
         dot = weights * dot
-
         out = sparse.batchmm(indices, dot, size=(context, context), xmatrix=V)
         out = out.transpose(1, 2).contiguous().view(batch, context, self.n_heads * emb)
         return self.unify(out)
@@ -250,7 +253,6 @@ class SparseSelfAttention(nn.Module):
         assert context_len == self.context_len, f'Expected contextlen equal to {self.context_len}. Got {context_len}'
         assert emb == self.emb, f'Expected embedded equal to {self.emb}. Got {emb}'
 
-        # inp = torch.cat([x, coords], dim=2)
         params = self.to_param(x)  # (B, C, k*2) k means and sigmas for each point (1 degree of freedom)
 
         # Generate the logits that correspond to the horizontal coordinate of the current word
@@ -262,7 +264,7 @@ class SparseSelfAttention(nn.Module):
         sigmas = params[:, :, self.k:].view(batch_size, -1, self.k)  # (B, C, K)
         values = self.mvalues[None, None, :].expand(batch_size, context_len, -1)  # Expand to all points (B, C, K)
 
-        means = diags - torch.nn.functional.softplus(means)
+        # means = diags - torch.nn.functional.softplus(means)
         means = sparse.transform_means(means, (context_len,))
         sigmas = sparse.transform_sigmas(sigmas, (context_len,))
         return means, sigmas, values
@@ -330,26 +332,6 @@ class SparseSelfAttention(nn.Module):
         Q = Q / (emb ** (1 / 4))  # Normalize along the embedding dimension
         K = K / (emb ** (1 / 4))
 
-        # Now this is just a list of coordinates arranged by batch,head,context
-        # indices_flattened = indices.view(batch * self.n_heads * context * num_points, -1)
-        # This is an array that refers the coordinates in the above tensor back to the original values in KQV matrices
-        # ar = torch.arange(batch * self.n_heads, device=util.d(x), dtype=torch.long)[:, None] \
-        #     .expand(batch * self.n_heads, context * num_points) \
-        #     .contiguous() \
-        #     .view(batch * self.n_heads * context * num_points)
-
-        # It's important to note we have 1 degree of freedom (see out (torch.cat([out, indices])) was generated via
-        # torch.arange in order to have "k" points for every token in the attention matrix. This means that every
-        # element will be represented as a query. However, since indices were generated via the hyper network, the keys
-        # are actually going to sparse (80 vs 200). This is what indices_flattened[:, {0,1}] refers to.
-        # NOTE: This explodes the size of Q or K since there's a lot of repeats in ar.
-        # squeries = Q[ar, indices_flattened[:, 1], :]
-        # skeys = K[ar, indices_flattened[:, 0], :]
-
-        # In order to get the dot between QK for each of the elements acting as Q and K, somehow this works out
-        # to calculating that dot product in a flattened form
-        # dot = torch.bmm(squeries[:, None, :], skeys[:, :, None]).view(batch * self.n_heads, context * num_points)
-
         batch2, np, _ = indices.shape
         batch_is = torch.arange(batch2, dtype=torch.long, device=util.d(x))[None, :].expand(np, -1).t().reshape(-1)
         indices2 = torch.cat([batch_is[:, None], indices.view(-1, 2)], dim=-1)
@@ -365,13 +347,13 @@ class SparseSelfAttention(nn.Module):
 class Head(nn.Module):
     """ one head of self-attention """
 
-    def __init__(self, head_size, n_embd, block_size, dropout = 0.0):
+    def __init__(self, head_size, n_embd, block_size, dropout=0.0, mask=True, **kwargs):
         super().__init__()
         self.key = nn.Linear(n_embd, head_size, bias=False)
         self.query = nn.Linear(n_embd, head_size, bias=False)
         self.value = nn.Linear(n_embd, head_size, bias=False)
         self.register_buffer('tril', torch.tril(torch.ones(block_size, block_size)))
-
+        self.mask = mask
         self.dropout = nn.Dropout(dropout)
 
     def forward(self, x):
@@ -382,7 +364,8 @@ class Head(nn.Module):
         q = self.query(x) # (B,T,hs)
         # compute attention scores ("affinities")
         wei = q @ k.transpose(-2,-1) * k.shape[-1]**-0.5 # (B, T, hs) @ (B, hs, T) -> (B, T, T)
-        wei = wei.masked_fill(self.tril[:T, :T] == 0, float('-inf')) # (B, T, T)
+        if self.mask:
+            wei = wei.masked_fill(self.tril[:T, :T] == 0, float('-inf')) # (B, T, T)
         wei = torch.nn.functional.softmax(wei, dim=-1) # (B, T, T)
         wei = self.dropout(wei)
         # perform the weighted aggregation of the values
@@ -394,9 +377,9 @@ class Head(nn.Module):
 class MultiHeadAttention(nn.Module):
     """ multiple heads of self-attention in parallel """
 
-    def __init__(self, num_heads, head_size, n_embd, block_size, dropout=0.0):
+    def __init__(self, num_heads, head_size, n_embd, block_size, dropout=0.0, **kwargs):
         super().__init__()
-        self.heads = nn.ModuleList([Head(head_size, n_embd, block_size) for _ in range(num_heads)])
+        self.heads = nn.ModuleList([Head(head_size, n_embd, block_size, **kwargs) for _ in range(num_heads)])
         self.proj = nn.Linear(head_size * num_heads, n_embd)
         self.dropout = nn.Dropout(dropout)
 
@@ -404,3 +387,18 @@ class MultiHeadAttention(nn.Module):
         out = torch.cat([h(x) for h in self.heads], dim=-1)
         out = self.dropout(self.proj(out))
         return out
+
+
+class NativeAttention(nn.Module):
+    def __init__(self, num_heads, emb, context, mask, **kwargs):
+        super().__init__()
+        self.mask = mask
+        self.native_attention = nn.MultiheadAttention(emb, num_heads)
+    
+    def forward(self, x: Tensor) -> Tensor:
+        if self.mask:
+            mask = torch.nn.Transformer.generate_square_subsequent_mask(None, x.size(1)).to(util.d(x))
+            out, _ = self.native_attention(x.transpose(0, 1), x.transpose(0, 1), x.transpose(0, 1), attn_mask=mask)
+        else:
+            out, _ = self.native_attention(x.transpose(0, 1), x.transpose(0, 1), x.transpose(0, 1))
+        return out.transpose(0, 1)
