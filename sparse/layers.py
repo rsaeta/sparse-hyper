@@ -95,7 +95,6 @@ def transform_means(means, size, method='sigmoid'):
     :return: (..., rank)
     """
     # Compute upper bounds
-    # breakpoint()
     s = torch.tensor(list(size), dtype=torch.float, device=d(means)) - 1
     s = util.unsqueezen(s, len(means.size()) - 1)
     s = s.expand_as(means)

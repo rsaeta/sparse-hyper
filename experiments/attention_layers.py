@@ -253,14 +253,12 @@ class SparseSelfAttention(nn.Module):
         assert context_len == self.context_len, f'Expected contextlen equal to {self.context_len}. Got {context_len}'
         assert emb == self.emb, f'Expected embedded equal to {self.emb}. Got {emb}'
 
-        # inp = torch.cat([x, coords], dim=2)
         params = self.to_param(x)  # (B, C, k*2) k means and sigmas for each point (1 degree of freedom)
 
         # Generate the logits that correspond to the horizontal coordinate of the current word
         diags = torch.arange(context_len, device=util.d(x), dtype=torch.float)
         diags = util.inv(diags, mx=context_len)
         diags = diags[None, :, None, None].expand(batch_size, -1, self.k, 1)  # (B, C, K, 1)
-        # breakpoint()
 
         means = params[:, :, :self.k].view(batch_size, -1, self.k, 1)  # Single mean for current point  (B, C, K, 1)
         sigmas = params[:, :, self.k:].view(batch_size, -1, self.k)  # (B, C, K)

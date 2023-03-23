@@ -65,7 +65,6 @@ def train(args: argparse.Namespace):
     mask_token_index = torch.cat([data_train, data_val, data_test], dim=0).max().item() + 1
     n_validated = 0
     data_train, data_test = (data_train, data_val)
-    # breakpoint()
     for i in range(args.num_batches):
         model.train(True)
         optimizer.zero_grad()
@@ -73,7 +72,6 @@ def train(args: argparse.Namespace):
                                             length=args.context,
                                             batch_size=args.batch_size,
                                             mask_token=mask_token_index)
-        # breakpoint()
         if cuda:
             source, target, mask = source.cuda(), target.cuda(), mask.cuda()
         instances_seen += source.size(0)
