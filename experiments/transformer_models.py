@@ -57,13 +57,6 @@ class TransformerBlock(nn.Module):
         x = self.dropout(x + self.attend(self.norm1(x)))
         x = self.dropout(x + self.ff(self.norm2(x)))
         return x
-        # normed1 = self.norm1(x)
-        # attended = self.attend(normed1)
-        # x = x + attended
-        # x = self.dropout(x)
-        # normed2 = self.norm2(x)
-        # x = x + self.ff(normed2)
-        # return self.dropout(x)
 
     def forward_for_plot(self, x: Tensor) -> Tuple[Tensor, Tuple[Tensor, Tensor, Tensor]]:
         normed1 = self.norm1(x)
