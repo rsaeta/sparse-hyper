@@ -79,12 +79,6 @@ def train(args: argparse.Namespace):
         instances_seen += source.size(0)
 
         logits = model(source)
-        # output = torch.nn.functional.log_softmax(logits, dim=-1)
-
-        # loverall = torch.nn.functional.nll_loss(output.transpose(1, 2),
-        #                                     target,
-        #                                     reduction='none')
-        # loss = (loverall*mask).mean()
     
         loss = torch.nn.functional.cross_entropy(logits[mask].reshape(-1, NUM_TOKENS), target[mask].reshape(-1), reduction='mean')
         to_log = {'loss': loss.item(), 'lr': scheduler.get_last_lr()[0]}
@@ -105,12 +99,6 @@ def train(args: argparse.Namespace):
                 source, target, mask = source.cuda(), target.cuda(), mask.cuda()
             instances_seen += source.size(0)
             logits = model(source)
-            # breakpoint()
-            # output = torch.nn.functional.log_softmax(logits, dim=-1)
-            # loss = torch.nn.functional.nll_loss(output.reshape(-1, NUM_TOKENS),
-                                                # target,
-                                                # reduction='none')
-            # loss = (loss*mask).mean()
             loss = torch.nn.functional.cross_entropy(logits[mask].reshape(-1, NUM_TOKENS), target[mask].reshape(-1), reduction='mean')
             to_log = {'validation_loss': loss.item()}
             print('wandblog', to_log)
