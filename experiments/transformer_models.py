@@ -10,6 +10,7 @@ from attention_layers import (
     MultiHeadAttention, 
     ReallySparseAttention,
     NativeAttention,
+    DynamicDilatedAttention,
 )
 
 try:
@@ -29,6 +30,8 @@ class TransformerBlock(nn.Module):
                  ff_hidden_mult: int = 4,
                  dropout: float = 0.0,
                  attention_type: Literal['dense', 'sparse', 'fixed', 'sparse2d', 'native'] = 'dense',
+                 depth: int = 0,
+                 shared_predictor: nn.Module = None,
                  **kwargs):
         super().__init__()
         if attention_type == 'dense':
@@ -41,6 +44,11 @@ class TransformerBlock(nn.Module):
             self.attend = ReallySparseAttention(emb, context, n_heads=heads, **kwargs)
         elif attention_type == 'native':
             self.attend = NativeAttention(heads, emb, context, **kwargs)
+        elif attention_type == 'dilated':
+            self.attend = DynamicDilatedAttention(shared_predictor, 
+                                                  emb, 
+                                                  layer=depth, 
+                                                  **kwargs)
         else:
             raise ValueError(f'attention_type {attention_type} not recognized')
 
@@ -91,6 +99,7 @@ class SparseTransformer(nn.Module):
                  context_len: int,
                  emb: int,
                  vocab_size: int,
+                 attention_type: str,
                  *args,
                  **kwargs):
         super().__init__()
@@ -98,7 +107,17 @@ class SparseTransformer(nn.Module):
         self.vocab_size = vocab_size
         self.token_embedding = nn.Embedding(num_embeddings=vocab_size, embedding_dim=emb)
         self.pos_embedding = nn.Embedding(num_embeddings=context_len, embedding_dim=emb)
-        t_blocks = [TransformerBlock(context_len, emb, *args, **kwargs) for _ in range(n_blocks)]
+        if attention_type == 'dilated':
+            self.shared_predictor = nn.Sequential(nn.Linear(1, 4), nn.ReLU(), nn.Linear(4, 2))
+        else:
+            self.shared_predictor = None
+        t_blocks = [TransformerBlock(context_len,
+                                      emb, 
+                                      *args, 
+                                      depth=depth, 
+                                      shared_predictor=self.shared_predictor, 
+                                      **kwargs) 
+                        for depth in range(n_blocks)]
         self.t_blocks = nn.Sequential(*t_blocks)
 
     def embed(self, x: Tensor) -> Tensor:
