@@ -33,7 +33,7 @@ class TransformerBlock(nn.Module):
                  depth: int = 0,
                  shared_predictor: nn.Module = None,
                  **kwargs):
-        super().__init__()
+        super().__init__()  
         if attention_type == 'dense':
             self.attend = MultiHeadAttention(heads, emb, emb, context, **kwargs)
         elif attention_type == 'sparse':
@@ -48,6 +48,7 @@ class TransformerBlock(nn.Module):
             self.attend = DynamicDilatedAttention(shared_predictor, 
                                                   emb, 
                                                   layer=depth, 
+                                                  n_heads=heads,
                                                   **kwargs)
         else:
             raise ValueError(f'attention_type {attention_type} not recognized')
@@ -99,7 +100,7 @@ class SparseTransformer(nn.Module):
                  context_len: int,
                  emb: int,
                  vocab_size: int,
-                 attention_type: str,
+                 attention_type: str = None,
                  *args,
                  **kwargs):
         super().__init__()
@@ -116,6 +117,7 @@ class SparseTransformer(nn.Module):
                                       *args, 
                                       depth=depth, 
                                       shared_predictor=self.shared_predictor, 
+                                      attention_type=attention_type,
                                       **kwargs) 
                         for depth in range(n_blocks)]
         self.t_blocks = nn.Sequential(*t_blocks)
