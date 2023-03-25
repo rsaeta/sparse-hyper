@@ -126,7 +126,7 @@ def lr(args, i):
 
 
 def learners(model, args):
-    optimizer = torch.optim.Adam(lr=args.learning_rate, params=model.parameters())
+    optimizer = torch.optim.AdamW(lr=args.learning_rate, params=model.parameters())
     scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer,
                                                   partial(lr, args))
     if args.load_model is not None:
@@ -141,8 +141,6 @@ def learners(model, args):
                                     if cuda else torch.device('cpu'))
             scheduler.load_state_dict(state_dict)
 
-    if cuda:
-        optimizer, scheduler = optimizer.cuda(), scheduler.cuda()
     return optimizer, scheduler
 
 
