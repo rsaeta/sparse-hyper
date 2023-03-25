@@ -144,8 +144,8 @@ class DynamicDilatedAttention(nn.Module):
         params = self.stride_predictor(torch.tensor([self.layer], device=util.d(x)).float())
         dilation, sigma = params[0], params[1]
         b, t = x.size(0), x.size(-2)
-        offsets = torch.arange(-self.k, self.k+1)*dilation
-        means = torch.arange(t)[None,:].expand(offsets.size(0), -1).t()
+        offsets = torch.arange(-self.k, self.k+1, device=util.d(x))*dilation
+        means = torch.arange(t, device=util.d(x))[None,:].expand(offsets.size(0), -1).t()
         means = (offsets.expand_as(means) + means)[None,:,:].expand(b, -1, -1)
         sigmas = sigma[None,None].expand_as(means).squeeze()
         mvalues = self.mvalues[None, :].expand_as(sigmas)
