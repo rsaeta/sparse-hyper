@@ -54,8 +54,6 @@ def init_wandb(args):
 def train(args: argparse.Namespace):
     model = get_model(args, mask=False)
     setup(args)
-    if cuda:
-        model.cuda()
     optimizer, scheduler = learners(model, args)
     instances_seen = 0
     data_train, data_val, data_test = enwik8(args.data)
@@ -112,8 +110,10 @@ def train(args: argparse.Namespace):
                     s = s.view(-1)
                     attention_viz(m, s, (context, context), save_file=f'{args.save_dir}/{n_validated//args.save_every}_attention_{layer}.pdf')
             if n_validated % args.save_every == 0:
-                f_name = f'{args.save_dir}/checkpoint_{n_validated//args.save_every}.pt'
-                torch.save(model.state_dict(), f_name)
+                f_name = f'{args.save_dir}/checkpoint_{n_validated//args.save_every}_'
+                torch.save(model.state_dict(), f_name + 'model.pt')
+                torch.save(optimizer.state_dict(), f_name + 'optimizer.pt')
+                torch.save(scheduler.state_dict(), f_name + 'scheduler.pt')
             n_validated += 1
 
 
