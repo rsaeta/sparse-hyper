@@ -140,7 +140,7 @@ class DynamicDilatedAttention(nn.Module):
         self.stride_predictor = stride_predictor
         self.register_buffer('mvalues',torch.ones(2*k+1))
 
-    def hyper(self, x: Tensor) -> Tensor:
+    def hyper(self, x: Tensor) -> Tuple[Tensor, Tensor, Tensor]:
         params = self.stride_predictor(torch.tensor([self.layer], device=util.d(x)).float())
         dilation, sigma = params[0], params[1]
         b, t = x.size(0), x.size(-2)
@@ -151,8 +151,7 @@ class DynamicDilatedAttention(nn.Module):
         mvalues = self.mvalues[None, :].expand_as(sigmas)
         means = sparse.transform_means(means, (t,), 'clamp')
         sigmas = sparse.transform_sigmas(sigmas, (t,))
-        return means[...,None], sigmas, mvalues
-
+        return means[..., None], sigmas, mvalues
 
     def forward(self, x: Tensor) -> Tensor:
         means, sigmas, values = self.hyper(x)  # (B, C, k, 1); (B, C, k, 1); (B, C, k)
@@ -414,7 +413,6 @@ class SparseSelfAttention(nn.Module):
         assert ((indices < 0).sum().item() == 0) and ((indices >= context).sum().item() == 0), \
             f'Found some indices out of bounds: indices < 0: {(indices < 0).sum().item()}; ' \
             f'indices >= {context}: {(indices >= context).sum().item()}'
-        breakpoint()
         indices_fl = indices.float()
         # For each point (self.k), we expect to sample the 2**rank closest points from the first set of sampling,
         # then self.gadditional globally-sampled indices, and self.nadditional neighborhood-sampled indices.
