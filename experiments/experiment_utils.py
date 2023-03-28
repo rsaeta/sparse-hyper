@@ -6,7 +6,7 @@ from transformer_models import GeneratingTransformer
 from argparse import Namespace, ArgumentParser
 import gzip
 import numpy as np
-
+from tokenizers import BertWordPieceTokenizer
 
 cuda = torch.cuda.is_available()
 
@@ -71,6 +71,12 @@ def parse_args() -> Namespace:
                         default=None, type=str)
     parser.add_argument('--interact', default=False, action='store_true')
     parser.add_argument('--constant-lr', action='store_true')
+    parser.add_argument('--tokenizer', default='wordpiece',
+                        type=str, choices=['wordpiece'])
+    parser.add_argument('--tokenizer-file', default=None, required=False,
+                        type=str, dest='tokenizer_file')
+    parser.add_argument('--vocab-size', dest='vocab_size', default=32768,
+                        type=int)
     options = parser.parse_args()
     print(options)
     return options
@@ -147,6 +153,21 @@ def learners(model, args):
             scheduler.load_state_dict(state_dict)
 
     return optimizer, scheduler
+
+
+def tokenizer(args: Namespace):
+    if args.tokenizer == 'wordpiece':
+        tokenizer_cls = BertWordPieceTokenizer
+    else:
+        raise NotImplementedError(f'Tokenizer {args.tokenizer} not yet implemented')
+    if args.tokenizer_file is not None:
+        tok = tokenizer_cls.from_pretrained(args.tokenizer_file)
+
+    else:
+        tok = tokenizer_cls()
+        tok.train([args.data], vocab_size=args.vocab_size)
+
+    return tok
 
 
 def setup(args: Namespace):
