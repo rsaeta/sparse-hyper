@@ -3,7 +3,6 @@ from experiment_utils import parse_args, get_model, learners, cuda, setup, enwik
 
 import torch
 import torch.nn.functional as F
-import torch.distributions as dist
 
 import wandb
 
@@ -54,8 +53,6 @@ def init_wandb(args):
 def train(args: argparse.Namespace):
     model = get_model(args, mask=False)
     setup(args)
-    if cuda:
-        model.cuda()
     optimizer, scheduler = learners(model, args)
     instances_seen = 0
     data_train, data_val, data_test = enwik8(args.data)
@@ -78,7 +75,7 @@ def train(args: argparse.Namespace):
 
         logits = model(source)
     
-        loss = torch.nn.functional.cross_entropy(logits[mask].reshape(-1, NUM_TOKENS), target[mask].reshape(-1), reduction='mean')
+        loss = F.cross_entropy(logits[mask].reshape(-1, NUM_TOKENS), target[mask].reshape(-1), reduction='mean')
         to_log = {'loss': loss.item(), 'lr': scheduler.get_last_lr()[0]}
         print('wandblog', to_log)
         wandb.log(to_log)
@@ -97,10 +94,13 @@ def train(args: argparse.Namespace):
                 source, target, mask = source.cuda(), target.cuda(), mask.cuda()
             instances_seen += source.size(0)
             logits = model(source)
-            loss = torch.nn.functional.cross_entropy(logits[mask].reshape(-1, NUM_TOKENS), target[mask].reshape(-1), reduction='mean')
+            loss = F.cross_entropy(logits[mask].reshape(-1, NUM_TOKENS), target[mask].reshape(-1), reduction='mean')
             to_log = {'validation_loss': loss.item()}
             print('wandblog', to_log)
             wandb.log(to_log)
+            n_validated += 1
+            if args.save_dir is None:
+                continue
             if args.plot_attention:
                 _, (ms, ss, _) = model.forward_for_plot(source)
                 # Iterate through the layers of the model, looking at first item in the batch
@@ -112,9 +112,10 @@ def train(args: argparse.Namespace):
                     s = s.view(-1)
                     attention_viz(m, s, (context, context), save_file=f'{args.save_dir}/{n_validated//args.save_every}_attention_{layer}.pdf')
             if n_validated % args.save_every == 0:
-                f_name = f'{args.save_dir}/checkpoint_{n_validated//args.save_every}.pt'
-                torch.save(model.state_dict(), f_name)
-            n_validated += 1
+                f_name = f'{args.save_dir}/checkpoint_{n_validated//args.save_every}_'
+                torch.save(model.state_dict(), f_name + 'model.pt')
+                torch.save(optimizer.state_dict(), f_name + 'optimizer.pt')
+                torch.save(scheduler.state_dict(), f_name + 'scheduler.pt')
 
 
 def ttos(t: torch.Tensor) -> str:
@@ -133,7 +134,7 @@ def interact(args):
         source, target, mask = source.cuda(), target.cuda(), mask.cuda()
 
     logits = model(source)
-    output = torch.nn.functional.log_softmax(logits, dim=-1)
+    output = F.log_softmax(logits, dim=-1)
     preds = torch.argmax(output, dim=-1)
     breakpoint()
     print('\n'.join(map(ttos, [target[0], source[0], preds[0]])))
