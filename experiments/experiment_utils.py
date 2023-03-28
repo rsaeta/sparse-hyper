@@ -1,5 +1,7 @@
 import os
 import json
+
+import tokenizers
 import torch
 from functools import partial
 from transformer_models import GeneratingTransformer
@@ -82,12 +84,12 @@ def parse_args() -> Namespace:
     return options
 
 
-def get_model(args: Namespace, mask: bool = False) -> GeneratingTransformer:
+def get_model(args: Namespace, vocab_size: int, mask: bool = False) -> GeneratingTransformer:
     model = GeneratingTransformer(
         args.depth,
         args.context,
         args.embedding,
-        256,
+        vocab_size=vocab_size,
         k=args.num_indices,
         heads=args.n_heads,
         nadditional=args.nadditional,
@@ -155,7 +157,7 @@ def learners(model, args):
     return optimizer, scheduler
 
 
-def tokenizer(args: Namespace):
+def get_tokenizer(args: Namespace) -> tokenizers.Tokenizer:
     if args.tokenizer == 'wordpiece':
         tokenizer_cls = BertWordPieceTokenizer
     else:
