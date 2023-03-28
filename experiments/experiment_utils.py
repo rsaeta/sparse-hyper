@@ -131,7 +131,8 @@ def learners(model, args):
     scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer,
                                                   partial(lr, args))
     if args.constant_lr:
-        scheduler = torch.optim.lr_scheduler.ConstantLR(optimizer, 1.)
+        scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer,
+                                                      lambda _: 1.)
         return optimizer, scheduler
     if args.load_model is not None:
         optimizername = args.load_model.replace('model.pt', 'optimizer.pt')
