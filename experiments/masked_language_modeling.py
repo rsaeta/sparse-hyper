@@ -1,4 +1,7 @@
 import argparse
+
+import tokenizers
+
 from experiment_utils import (
     parse_args,
     get_model,
@@ -89,7 +92,8 @@ def train(args: argparse.Namespace):
     
         loss = F.cross_entropy(logits[mask].reshape(-1, vocab_size), target[mask].reshape(-1), reduction='mean')
         to_log = {'loss': loss.item(), 'lr': scheduler.get_last_lr()[0]}
-        print('wandblog', to_log)
+        if i % args.print_every == 0:
+            print('wandblog', to_log)
         wandb.log(to_log)
         loss.backward()
         torch.nn.utils.clip_grad_norm_(model.parameters(), args.clipping_value)
@@ -130,18 +134,21 @@ def train(args: argparse.Namespace):
                 torch.save(scheduler.state_dict(), f_name + 'scheduler.pt')
 
 
-def ttos(t: torch.Tensor) -> str:
-    return ''.join(map(chr, t))
+def ttos(t: torch.Tensor, tokenizer: tokenizers.Tokenizer = None) -> str:
+    if tokenizer is None:
+        return ''.join(map(chr, t))
+    return tokenizer.decode(t)
 
 
 def interact(args):
-    model = get_model(args, mask=False)
+    tokenizer = get_tokenizer(args)
+    vocab_size = tokenizer.get_vocab_size()
+    model = get_model(args, vocab_size=vocab_size, mask=False)
     data_train, data_val, data_test = enwik8(args.data)
-    mask_token_index = torch.cat([data_train, data_val, data_test], dim=0).max().item() + 1
     source, target, mask = sample_batch(data_train,
+                                        tokenizer=tokenizer,
                                         length=args.context,
-                                        batch_size=args.batch_size,
-                                        mask_token=mask_token_index)
+                                        batch_size=args.batch_size)
     if cuda:
         source, target, mask = source.cuda(), target.cuda(), mask.cuda()
 
@@ -149,7 +156,7 @@ def interact(args):
     output = F.log_softmax(logits, dim=-1)
     preds = torch.argmax(output, dim=-1)
     breakpoint()
-    print('\n'.join(map(ttos, [target[0], source[0], preds[0]])))
+    print('\n'.join(map(lambda t: ttos(t, tokenizer), [target[0], source[0], preds[0]])))
 
 
 def main():
