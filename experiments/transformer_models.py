@@ -109,7 +109,11 @@ class SparseTransformer(nn.Module):
         self.token_embedding = nn.Embedding(num_embeddings=vocab_size, embedding_dim=emb)
         self.pos_embedding = nn.Embedding(num_embeddings=context_len, embedding_dim=emb)
         if attention_type == 'dilated':
-            self.shared_predictor = nn.Sequential(nn.Linear(1, 10), nn.Sigmoid(), nn.Linear(10, 2), nn.Softplus())
+            self.shared_predictor = nn.Sequential(nn.Linear(1, 10),
+                                                  nn.Sigmoid(),
+                                                  nn.Linear(10, 10),
+                                                  nn.ReLU(),
+                                                  nn.Linear(10, 2))
         else:
             self.shared_predictor = None
         t_blocks = [TransformerBlock(context_len,

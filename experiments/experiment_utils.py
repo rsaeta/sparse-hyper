@@ -79,7 +79,7 @@ def parse_args() -> Namespace:
                         type=str, dest='tokenizer_file')
     parser.add_argument('--vocab-size', dest='vocab_size', default=32768,
                         type=int)
-    parser.add_argument('--print-every', dest='print_every',
+    parser.add_argument('--log-every', dest='log_every',
                         type=int, default=1)
     parser.add_argument('--min-lr', dest='min_lr', type=float, default=5e-5)
     options = parser.parse_args()

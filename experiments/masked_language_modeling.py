@@ -77,6 +77,7 @@ def train(args: argparse.Namespace):
     # We want the mask token index to not be a token in the actual data.
     n_validated = 0
     data_train, data_test = (data_train, data_val)
+    batch_loss = 0.
     for i in range(args.num_batches):
         model.train(True)
         optimizer.zero_grad()
@@ -91,10 +92,14 @@ def train(args: argparse.Namespace):
         logits = model(source)
     
         loss = F.cross_entropy(logits[mask].reshape(-1, vocab_size), target[mask].reshape(-1), reduction='mean')
-        to_log = {'loss': loss.item(), 'lr': scheduler.get_last_lr()[0]}
-        if i % args.print_every == 0:
+        batch_loss += loss.item()
+        if i % args.log_every == 0:
+            bloss = batch_loss / args.log_every
+            to_log = {'loss': bloss, 'lr': scheduler.get_last_lr()[0]}
             print('wandblog', to_log)
-        wandb.log(to_log)
+            wandb.log(to_log)
+            batch_loss = 0.
+
         loss.backward()
         torch.nn.utils.clip_grad_norm_(model.parameters(), args.clipping_value)
         optimizer.step()
