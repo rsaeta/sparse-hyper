@@ -1,5 +1,13 @@
 import argparse
-from experiment_utils import parse_args, get_model, learners, cuda, setup, enwik8
+from experiment_utils import (
+    parse_args,
+    get_model,
+    learners,
+    cuda,
+    setup,
+    enwik8,
+    get_tokenizer,
+)
 
 import torch
 import torch.nn.functional as F
@@ -8,31 +16,33 @@ import wandb
 
 from plot_utils import attention_viz
 
-# NB, the enwik8 data contains tokens from 9 to 240, but well round up to the nearest
-# power of two.
-NUM_TOKENS = 256
 
-
-def sample_batch(data, length, batch_size, mask_token, mask_p=0.15):
+def sample_batch(data, tokenizer, length, batch_size, mask_p=0.15):
     """
     Takes the data (a single sequence of tokens) and slices out a batch of subsequences to provide as input to the model
     while also randomly masking a single entry in the sequence to the mask_token provided.
     :param data: The (training) data. A single vector of tokens represented by integers
     :param length: The length of the subsequences in the batch.
     :param batch_size: The number of subsequences in the batch
-    :param mask_token: The token that represents the mask to be predicted by the model
+    :param tokenizer: The tokenizer that is used to parse the texts
     :param mask_p: The probability of masking a token
     :return: A pair (input, target) of minteger matrices representing the input and target for the model.
     """
+    mask_token = tokenizer.token_to_id('[MASK]')
+    byte_len = 50*length
 
     # Sample the starting indices of the sequences to slice out.
-    starts = torch.randint(size=(batch_size,), low=0, high=data.size(0) - length - 1)
+    starts = torch.randint(size=(batch_size,), low=0, high=data.size(0) - byte_len)
 
     # Slice out the input sequences
-    seqs_inputs = torch.cat([data[start:start + length][None, :] for start in starts]).long()
+    strs = [ttos(data[start:start + byte_len]) for start in starts]
+    encoded = [torch.tensor(tokenizer.encode(s).ids)[None, :length].long() for s in strs]
+    seqs_inputs = torch.cat(encoded)
     mask = torch.rand(seqs_inputs.size()) < mask_p
     targets = seqs_inputs.detach().clone()
     seqs_inputs.masked_fill_(mask, mask_token)
+    if cuda:
+        seqs_inputs = seqs_inputs.cuda()
 
     return seqs_inputs, targets, mask
 
@@ -51,31 +61,33 @@ def init_wandb(args):
 
 
 def train(args: argparse.Namespace):
-    model = get_model(args, mask=False)
     setup(args)
+    tokenizer = get_tokenizer(args)
+    vocab_size = tokenizer.get_vocab_size()
+    model = get_model(args, vocab_size=vocab_size, mask=False)
     optimizer, scheduler = learners(model, args)
     instances_seen = 0
     data_train, data_val, data_test = enwik8(args.data)
+
     if args.watch_model:
         wandb.watch(model)
     # We want the mask token index to not be a token in the actual data.
-    mask_token_index = torch.cat([data_train, data_val, data_test], dim=0).max().item() + 1
     n_validated = 0
     data_train, data_test = (data_train, data_val)
     for i in range(args.num_batches):
         model.train(True)
         optimizer.zero_grad()
         source, target, mask = sample_batch(data_train,
+                                            tokenizer,
                                             length=args.context,
-                                            batch_size=args.batch_size,
-                                            mask_token=mask_token_index)
+                                            batch_size=args.batch_size)
         if cuda:
             source, target, mask = source.cuda(), target.cuda(), mask.cuda()
         instances_seen += source.size(0)
 
         logits = model(source)
     
-        loss = F.cross_entropy(logits[mask].reshape(-1, NUM_TOKENS), target[mask].reshape(-1), reduction='mean')
+        loss = F.cross_entropy(logits[mask].reshape(-1, vocab_size), target[mask].reshape(-1), reduction='mean')
         to_log = {'loss': loss.item(), 'lr': scheduler.get_last_lr()[0]}
         print('wandblog', to_log)
         wandb.log(to_log)
@@ -87,14 +99,14 @@ def train(args: argparse.Namespace):
         if i % args.validation_every == 0 and i > 0:
             model.train(False)
             source, target, mask = sample_batch(data_test,
+                                                tokenizer,
                                                 length=args.context,
-                                                batch_size=args.batch_size,
-                                                mask_token=mask_token_index)
+                                                batch_size=args.batch_size)
             if cuda:
                 source, target, mask = source.cuda(), target.cuda(), mask.cuda()
             instances_seen += source.size(0)
             logits = model(source)
-            loss = F.cross_entropy(logits[mask].reshape(-1, NUM_TOKENS), target[mask].reshape(-1), reduction='mean')
+            loss = F.cross_entropy(logits[mask].reshape(-1, vocab_size), target[mask].reshape(-1), reduction='mean')
             to_log = {'validation_loss': loss.item()}
             print('wandblog', to_log)
             wandb.log(to_log)
