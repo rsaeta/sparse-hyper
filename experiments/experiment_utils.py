@@ -79,6 +79,9 @@ def parse_args() -> Namespace:
                         type=str, dest='tokenizer_file')
     parser.add_argument('--vocab-size', dest='vocab_size', default=32768,
                         type=int)
+    parser.add_argument('--print-every', dest='print_every',
+                        type=int, default=1)
+    parser.add_argument('--min-lr', dest='min_lr', type=float, default=5e-5)
     options = parser.parse_args()
     print(options)
     return options
@@ -106,7 +109,6 @@ def get_model(args: Namespace, vocab_size: int, mask: bool = False) -> Generatin
     return model
 
 
-
 def enwik8(path, n_train=int(90e6), n_valid=int(5e6), n_test=int(5e6)):
     """
     Load the enwik8 dataset from the Hutter challenge.
@@ -129,9 +131,10 @@ def enwik8(path, n_train=int(90e6), n_valid=int(5e6), n_test=int(5e6)):
 
 def lr(args, i):
     if i < args.lr_warmup:
-        return (i+1)/args.lr_warmup
+        next_lr = (i+1)/args.lr_warmup
     else:
-        return 1 - i/args.num_batches
+        next_lr = 1 - i/args.num_batches
+    return max(next_lr, args.min_lr)
 
 
 def learners(model, args):
