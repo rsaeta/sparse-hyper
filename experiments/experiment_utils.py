@@ -177,6 +177,8 @@ def get_tokenizer(args: Namespace) -> tokenizers.Tokenizer:
 
 def setup(args: Namespace):
     save_dir = args.save_dir
+    if save_dir is None:
+        return
     if not os.path.isdir(save_dir):
         os.mkdir(save_dir)
     with open(os.path.join(save_dir, 'config.json'), 'w') as f:
