@@ -65,7 +65,6 @@ def init_wandb(args):
 
 def train(args: argparse.Namespace):
     setup(args)
-    torch.autograd.set_detect_anomaly(True)
     tokenizer = get_tokenizer(args)
     vocab_size = tokenizer.get_vocab_size()
     model = get_model(args, vocab_size=vocab_size, mask=False)
