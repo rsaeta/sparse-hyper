@@ -74,7 +74,7 @@ def parse_args() -> Namespace:
     parser.add_argument('--interact', default=False, action='store_true')
     parser.add_argument('--constant-lr', action='store_true')
     parser.add_argument('--tokenizer', default='wordpiece',
-                        type=str, choices=['wordpiece'])
+                        type=str, choices=['wordpiece', 'byte'])
     parser.add_argument('--tokenizer-file', default=None, required=False,
                         type=str, dest='tokenizer_file')
     parser.add_argument('--vocab-size', dest='vocab_size', default=32768,
@@ -160,9 +160,47 @@ def learners(model, args):
     return optimizer, scheduler
 
 
+class ByteEncoding:
+
+    def __init__(self, ids):
+        self.ids = ids
+
+
+class ByteTokenizer:
+
+    def __init__(self):
+        self.min_token = 20e10
+        self.max_token = 20e10
+        self.mask_token = 20e10
+
+    def train(self, datas, **kwargs):
+        chrs = set()
+        for d in datas:
+            text, val, test = enwik8(d)
+            chrs = chrs.union(text.unique())
+        self.min_token = min(chrs)
+        self.max_token = max(chrs)
+        self.mask_token = self.max_token+1
+
+    def get_vocab_size(self, with_added_tokens=True):
+        return self.mask_token+1
+
+    def token_to_id(self, token):
+        if token == '[MASK]':
+            return self.mask_token
+        return self.encode(token)
+
+    def encode(self, s):
+        ids = list(map(ord, s))
+        encs = ByteEncoding(ids)
+        return encs
+
+
 def get_tokenizer(args: Namespace) -> tokenizers.Tokenizer:
     if args.tokenizer == 'wordpiece':
         tokenizer_cls = BertWordPieceTokenizer
+    elif args.tokenizer == 'byte':
+        tokenizer_cls = ByteTokenizer
     else:
         raise NotImplementedError(f'Tokenizer {args.tokenizer} not yet implemented')
     if args.tokenizer_file is not None:

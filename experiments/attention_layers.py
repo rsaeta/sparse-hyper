@@ -223,7 +223,7 @@ class DynamicDilatedAttention(nn.Module):
         indices2 = torch.cat([batch_is[:, None], indices.view(-1, 2)], dim=-1)
         dot = util.calc_vals(Q, K.transpose(-2, -1), indices2).view(batch2, -1)
         # dot = weights * dot
-        dot = sparse.logsoftmax(indices, weights * dot, (context, context), method='naive').exp()
+        dot = sparse.logsoftmax(indices, weights * dot, (context, context)).exp()
         out = sparse.batchmm(indices, dot, size=(context, context), xmatrix=V)
         out = out.transpose(1, 2).contiguous().view(batch, context, self.n_heads * emb)
         return self.unify(out)
@@ -470,7 +470,7 @@ class SparseSelfAttention(nn.Module):
         indices2 = torch.cat([batch_is[:, None], indices.view(-1, 2)], dim=-1)
         dot = util.calc_vals(Q, K.transpose(-2, -1), indices2).view(batch2, -1)
         # dot = weights * dot
-        dot = sparse.logsoftmax(indices, weights * dot, (context, context), method='naive').exp()
+        dot = sparse.logsoftmax(indices, weights * dot, (context, context)).exp()
         out = sparse.batchmm(indices, dot, size=(context, context), xmatrix=V)
         out = out.transpose(1, 2).contiguous().view(batch, context, self.n_heads * emb)
         return self.unify(out)

@@ -65,6 +65,7 @@ def init_wandb(args):
 
 def train(args: argparse.Namespace):
     setup(args)
+    torch.autograd.set_detect_anomaly(True)
     tokenizer = get_tokenizer(args)
     vocab_size = tokenizer.get_vocab_size()
     model = get_model(args, vocab_size=vocab_size, mask=False)
@@ -101,6 +102,10 @@ def train(args: argparse.Namespace):
             batch_loss = 0.
 
         loss.backward()
+        ps = [p for p in model.parameters()]
+        if sum(torch.isnan(p.grad).sum() for p in ps) > 0:
+            nanparams = {k: v for k, v in model.named_parameters() if torch.isnan(v.grad).sum() > 0}
+            breakpoint()
         torch.nn.utils.clip_grad_norm_(model.parameters(), args.clipping_value)
         optimizer.step()
         scheduler.step()
