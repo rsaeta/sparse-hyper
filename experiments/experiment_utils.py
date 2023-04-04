@@ -88,6 +88,7 @@ def parse_args() -> Namespace:
 
 
 def get_model(args: Namespace, vocab_size: int, mask: bool = False) -> GeneratingTransformer:
+    breakpoint()
     model = GeneratingTransformer(
         args.depth,
         args.context,
@@ -178,8 +179,8 @@ class ByteTokenizer:
         for d in datas:
             text, val, test = enwik8(d)
             chrs = chrs.union(text.unique())
-        self.min_token = min(chrs)
-        self.max_token = max(chrs)
+        self.min_token = min(chrs).item()
+        self.max_token = max(chrs).item()
         self.mask_token = self.max_token+1
 
     def get_vocab_size(self, with_added_tokens=True):
