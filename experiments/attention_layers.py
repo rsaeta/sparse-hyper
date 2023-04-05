@@ -1,5 +1,6 @@
 import torch
 from torch import nn, Tensor
+import wandb
 
 from _context import sparse
 from sparse import util
@@ -143,6 +144,7 @@ class DynamicDilatedAttention(nn.Module):
     def hyper(self, x: Tensor) -> Tuple[Tensor, Tensor, Tensor]:
         params = self.stride_predictor(torch.tensor([self.layer], device=util.d(x)).float())
         dilation, sigma = params[0], params[1]
+        wandb.log({f'{self.layer}.dilation': dilation, f'{self.layer}.sigma': sigma}, commit=False)
         b, t = x.size(0), x.size(-2)
         offsets = torch.arange(-self.k, self.k+1, device=util.d(x))*dilation
         means = torch.arange(t, device=util.d(x))[None,:].expand(offsets.size(0), -1).t()
@@ -221,7 +223,7 @@ class DynamicDilatedAttention(nn.Module):
         indices2 = torch.cat([batch_is[:, None], indices.view(-1, 2)], dim=-1)
         dot = util.calc_vals(Q, K.transpose(-2, -1), indices2).view(batch2, -1)
         # dot = weights * dot
-        dot = sparse.logsoftmax(indices, weights * dot, (context, context), method='naive').exp()
+        dot = sparse.logsoftmax(indices, weights * dot, (context, context)).exp()
         out = sparse.batchmm(indices, dot, size=(context, context), xmatrix=V)
         out = out.transpose(1, 2).contiguous().view(batch, context, self.n_heads * emb)
         return self.unify(out)
@@ -468,7 +470,7 @@ class SparseSelfAttention(nn.Module):
         indices2 = torch.cat([batch_is[:, None], indices.view(-1, 2)], dim=-1)
         dot = util.calc_vals(Q, K.transpose(-2, -1), indices2).view(batch2, -1)
         # dot = weights * dot
-        dot = sparse.logsoftmax(indices, weights * dot, (context, context), method='naive').exp()
+        dot = sparse.logsoftmax(indices, weights * dot, (context, context)).exp()
         out = sparse.batchmm(indices, dot, size=(context, context), xmatrix=V)
         out = out.transpose(1, 2).contiguous().view(batch, context, self.n_heads * emb)
         return self.unify(out)

@@ -77,6 +77,7 @@ def train(args: argparse.Namespace):
     # We want the mask token index to not be a token in the actual data.
     n_validated = 0
     data_train, data_test = (data_train, data_val)
+    batch_loss = 0.
     for i in range(args.num_batches):
         model.train(True)
         optimizer.zero_grad()
@@ -91,10 +92,12 @@ def train(args: argparse.Namespace):
         logits = model(source)
     
         loss = F.cross_entropy(logits[mask].reshape(-1, vocab_size), target[mask].reshape(-1), reduction='mean')
-        to_log = {'loss': loss.item(), 'lr': scheduler.get_last_lr()[0]}
-        if i % args.print_every == 0:
-            print('wandblog', to_log)
-        wandb.log(to_log)
+        batch_loss += loss.item()
+        if i % args.log_every == 0:
+            bloss = batch_loss / args.log_every
+            wandb.log({'loss': bloss, 'lr': scheduler.get_last_lr()[0]}, commit=False, step=i)
+            batch_loss = 0.
+
         loss.backward()
         torch.nn.utils.clip_grad_norm_(model.parameters(), args.clipping_value)
         optimizer.step()
@@ -108,12 +111,11 @@ def train(args: argparse.Namespace):
                                                 batch_size=args.batch_size)
             if cuda:
                 source, target, mask = source.cuda(), target.cuda(), mask.cuda()
-            instances_seen += source.size(0)
             logits = model(source)
             loss = F.cross_entropy(logits[mask].reshape(-1, vocab_size), target[mask].reshape(-1), reduction='mean')
             to_log = {'validation_loss': loss.item()}
             print('wandblog', to_log)
-            wandb.log(to_log)
+            wandb.log(to_log, step=i//args.validation_every)
             n_validated += 1
             if args.save_dir is None:
                 continue
@@ -161,10 +163,10 @@ def interact(args):
 
 def main():
     args = parse_args()
+    init_wandb(args)
     if args.interact:
         interact(args)
         return
-    init_wandb(args)
     train(args)
     wandb.finish()
 

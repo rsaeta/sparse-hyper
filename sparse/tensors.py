@@ -260,8 +260,12 @@ def simple_normalize(indices, values, size, row=True, method='softplus', cuda=to
 
     return (values/(sums + epsilon))
 
+
 # -- stable(ish) softmax
-def logsoftmax(indices, values, size, its=10, p=2, method='iteration', row=True, cuda=torch.cuda.is_available()):
+def logsoftmax(indices: torch.Tensor,
+               values: torch.Tensor,
+               size: torch.Tensor,
+               its=10, p=2, method='iteration', row=True, cuda=torch.cuda.is_available()):
     """
     Row or column log-softmaxes a sparse matrix (using logsumexp trick)
     :param indices:
@@ -270,13 +274,15 @@ def logsoftmax(indices, values, size, its=10, p=2, method='iteration', row=True,
     :param row:
     :return:
     """
-    epsilon = 1e-7
+    epsilon = 1e-4
 
     if method == 'naive':
         values = values.exp()
         sums = sum(indices, values, size, row=row)
-
-        return (values/(sums + epsilon)).log()
+        denom = sums+epsilon
+        frac = values/denom
+        toret = frac.log()
+        return toret
 
     if method == 'pnorm':
         maxes = rowpnorm(indices, values, size, p=p)
@@ -285,11 +291,12 @@ def logsoftmax(indices, values, size, its=10, p=2, method='iteration', row=True,
     else:
         raise Exception('Max method {} not recognized'.format(method))
 
-    mvalues = torch.exp(values - maxes)
+    mvalues = torch.exp(values - maxes) + epsilon
 
     sums = sum(indices, mvalues, size, row=row)  # row/column sums]
-
-    return mvalues.log() - sums.log()
+    logm = mvalues.log()
+    logs = sums.log()
+    return logm - logs
 
 def rowpnorm(indices, values, size, p, row=True):
     """
