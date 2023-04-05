@@ -95,16 +95,10 @@ def train(args: argparse.Namespace):
         batch_loss += loss.item()
         if i % args.log_every == 0:
             bloss = batch_loss / args.log_every
-            to_log = {'loss': bloss, 'lr': scheduler.get_last_lr()[0]}
-            print('wandblog', to_log)
-            wandb.log(to_log)
+            wandb.log({'loss': bloss, 'lr': scheduler.get_last_lr()[0]}, commit=False, step=i)
             batch_loss = 0.
 
         loss.backward()
-        ps = [p for p in model.parameters()]
-        if sum(torch.isnan(p.grad).sum() for p in ps) > 0:
-            nanparams = {k: v for k, v in model.named_parameters() if torch.isnan(v.grad).sum() > 0}
-            breakpoint()
         torch.nn.utils.clip_grad_norm_(model.parameters(), args.clipping_value)
         optimizer.step()
         scheduler.step()
@@ -117,7 +111,6 @@ def train(args: argparse.Namespace):
                                                 batch_size=args.batch_size)
             if cuda:
                 source, target, mask = source.cuda(), target.cuda(), mask.cuda()
-            instances_seen += source.size(0)
             logits = model(source)
             loss = F.cross_entropy(logits[mask].reshape(-1, vocab_size), target[mask].reshape(-1), reduction='mean')
             to_log = {'validation_loss': loss.item()}

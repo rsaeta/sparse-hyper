@@ -88,7 +88,6 @@ def parse_args() -> Namespace:
 
 
 def get_model(args: Namespace, vocab_size: int, mask: bool = False) -> GeneratingTransformer:
-    breakpoint()
     model = GeneratingTransformer(
         args.depth,
         args.context,

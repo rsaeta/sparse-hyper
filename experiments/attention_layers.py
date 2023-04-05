@@ -144,7 +144,7 @@ class DynamicDilatedAttention(nn.Module):
     def hyper(self, x: Tensor) -> Tuple[Tensor, Tensor, Tensor]:
         params = self.stride_predictor(torch.tensor([self.layer], device=util.d(x)).float())
         dilation, sigma = params[0], params[1]
-        wandb.log({f'{self.layer}.dilation': dilation, f'{self.layer}.sigma': sigma})
+        wandb.log({f'{self.layer}.dilation': dilation, f'{self.layer}.sigma': sigma}, commit=False)
         b, t = x.size(0), x.size(-2)
         offsets = torch.arange(-self.k, self.k+1, device=util.d(x))*dilation
         means = torch.arange(t, device=util.d(x))[None,:].expand(offsets.size(0), -1).t()
