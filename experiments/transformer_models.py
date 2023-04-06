@@ -11,6 +11,7 @@ from attention_layers import (
     ReallySparseAttention,
     NativeAttention,
     DynamicDilatedAttention,
+    AlphaEntmax,
 )
 
 try:
@@ -50,6 +51,8 @@ class TransformerBlock(nn.Module):
                                                   layer=depth, 
                                                   n_heads=heads,
                                                   **kwargs)
+        elif attention_type == 'entmax':
+            self.attend = AlphaEntmax(heads, emb, context, **kwargs)
         else:
             raise ValueError(f'attention_type {attention_type} not recognized')
 
