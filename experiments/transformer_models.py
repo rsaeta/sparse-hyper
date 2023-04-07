@@ -80,7 +80,7 @@ class TransformerBlock(nn.Module):
             m, s, v = self.attend.hyper(normed1)
             indices: Tensor = sparse.ngenerate(m,
                                                self.attend.gadditional,
-                                               self.attend.radditional,
+                                               self.attend.nadditional,
                                                rng=(x.size(1),),
                                                relative_range=(2,),
                                                cuda='cuda' in util.d(x))
@@ -120,9 +120,9 @@ class SparseTransformer(nn.Module):
         self.pos_embedding = nn.Embedding(num_embeddings=context_len, embedding_dim=emb)
         if attention_type == 'dilated':
             self.shared_predictor = nn.Sequential(nn.Linear(1, 10),
-                                                  nn.Sigmoid(),
-                                                  nn.Linear(10, 10),
                                                   nn.ReLU(),
+                                                  nn.Linear(10, 10),
+                                                  nn.Tanh(),
                                                   nn.Linear(10, 2))
         else:
             self.shared_predictor = None

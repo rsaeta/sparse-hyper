@@ -124,7 +124,7 @@ class DynamicDilatedAttention(nn.Module):
                  k: int = 4, 
                  layer: int = 0, 
                  gadditional: int = 2,
-                 radditional: int = 0,
+                 nadditional: int = 0,
                  n_heads: int = 4,
                  **kwargs):
         super().__init__()
@@ -132,7 +132,7 @@ class DynamicDilatedAttention(nn.Module):
         self.k = k
         self.layer = layer
         self.gadditional = gadditional
-        self.radditional = radditional
+        self.nadditional = nadditional
         self.to_keys = nn.Linear(emb, emb * n_heads, bias=False)
         self.to_queries = nn.Linear(emb, emb * n_heads, bias=False)
         self.to_values = nn.Linear(emb, emb * n_heads, bias=False)
@@ -162,7 +162,7 @@ class DynamicDilatedAttention(nn.Module):
         rank = means.size(-1)
         indices: Tensor = sparse.ngenerate(means,
                                            self.gadditional,
-                                           self.radditional,
+                                           self.nadditional,
                                            rng=(context,),
                                            relative_range=(2,),
                                            cuda='cuda' in util.d(x))  # (B, C, P, 1)
@@ -172,7 +172,7 @@ class DynamicDilatedAttention(nn.Module):
         indices_fl = indices.float()
         # For each point (self.k), we expect to sample the 2**rank closest points from the first set of sampling,
         # then self.gadditional globally-sampled indices, and self.nadditional neighborhood-sampled indices.
-        num_points = (2*self.k+1) * (2 ** rank + self.gadditional + self.radditional)
+        num_points = (2*self.k+1) * (2 ** rank + self.gadditional + self.nadditional)
         assert indices.size() == (batch, context, num_points, 1)
         densities = sparse.densities(indices_fl, means, sigmas).clone()  # (B, C, P, self.k)
         duplicates = util.nduplicates(indices).to(torch.bool)  # (B, C, P) boolean mask of duplicates all-but-one
