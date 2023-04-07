@@ -33,16 +33,6 @@ def get_coords3(t, k, dilation: float):
     firsts = torch.arange(derp.size(0))[:, None, None].expand_as(derp)
     coords = torch.cat([firsts, derp], dim=-1)
     return coords
-    # num_coords = (torch.arange(k) + 1).sum() * (t // k) + torch.arange(t % k).sum()
-    # coords = torch.empty((num_coords, 2))
-    # i = 0
-    # for j in range(t):
-    #     eyes = get_eyes(j, k)
-    #     for eye in eyes:
-    #         coords[i, 0] = j
-    #         coords[i, 1] = eye
-    #         i += 1
-    # return coords
 
 
 class SparseHead1(nn.Module):
@@ -117,46 +107,33 @@ class BlocksparseFixedSelfAttention(nn.Module):
         return self.unify(comb)
 
 
-class DynamicDilatedAttention(nn.Module):
-    def __init__(self, 
-                 stride_predictor: nn.Module, 
-                 emb: int, 
-                 k: int = 4, 
-                 layer: int = 0, 
-                 gadditional: int = 2,
-                 nadditional: int = 0,
-                 n_heads: int = 4,
-                 **kwargs):
+class OneDimensionalSparseAttenion(nn.Module):
+
+    def __init__(self,
+                 emb: int,
+                 n_heads: int,
+                 *,
+                 k: int = 4,
+                 gadditional: int = 1,
+                 nadditional: int = 4):
         super().__init__()
         self.emb = emb
+        self.n_heads = n_heads
         self.k = k
-        self.layer = layer
         self.gadditional = gadditional
         self.nadditional = nadditional
+
         self.to_keys = nn.Linear(emb, emb * n_heads, bias=False)
         self.to_queries = nn.Linear(emb, emb * n_heads, bias=False)
         self.to_values = nn.Linear(emb, emb * n_heads, bias=False)
         self.unify = nn.Linear(emb * n_heads, emb)
-        self.n_heads = n_heads
-        # parameter sharing module that predicts the dilation and sigma given the layer number
-        self.stride_predictor = stride_predictor
-        self.register_buffer('mvalues',torch.ones(2*k+1))
 
-    def hyper(self, x: Tensor) -> Tuple[Tensor, Tensor, Tensor]:
-        params = self.stride_predictor(torch.tensor([self.layer], device=util.d(x)).float())
-        dilation, sigma = params[0], params[1]
-        wandb.log({f'{self.layer}.dilation': dilation, f'{self.layer}.sigma': sigma}, commit=False)
-        b, t = x.size(0), x.size(-2)
-        offsets = torch.arange(-self.k, self.k+1, device=util.d(x))*dilation
-        means = torch.arange(t, device=util.d(x))[None,:].expand(offsets.size(0), -1).t()
-        means = (offsets.expand_as(means) + means)[None,:,:].expand(b, -1, -1)
-        sigmas = sigma[None,None].expand_as(means).squeeze()
-        mvalues = self.mvalues[None, :].expand_as(sigmas)
-        means = sparse.transform_means(means, (t,), 'clamp')
-        sigmas = sparse.transform_sigmas(sigmas, (t,))
-        return means[..., None], sigmas, mvalues
+        self.register_buffer('mvalues', torch.ones((k,)))
 
-    def forward(self, x: Tensor) -> Tensor:
+    def hyper(self, x: torch.Tensor) -> Tuple[Tensor, Tensor, Tensor]:
+        raise NotImplementedError("You gotta implement this yourself")
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
         means, sigmas, values = self.hyper(x)  # (B, C, k, 1); (B, C, k, 1); (B, C, k)
         batch, context, emb = x.size()  # (B, C, E)
         rank = means.size(-1)
@@ -172,8 +149,9 @@ class DynamicDilatedAttention(nn.Module):
         indices_fl = indices.float()
         # For each point (self.k), we expect to sample the 2**rank closest points from the first set of sampling,
         # then self.gadditional globally-sampled indices, and self.nadditional neighborhood-sampled indices.
-        num_points = (2*self.k+1) * (2 ** rank + self.gadditional + self.nadditional)
-        assert indices.size() == (batch, context, num_points, 1)
+        num_points = self.k * (2 ** rank + self.gadditional + self.nadditional)
+        assert indices.size() == (batch, context, num_points, 1), f'Expected size {(batch, context, num_points, 1)}. ' \
+                                                                  f'Got {indices.size()}'
         densities = sparse.densities(indices_fl, means, sigmas).clone()  # (B, C, P, self.k)
         duplicates = util.nduplicates(indices).to(torch.bool)  # (B, C, P) boolean mask of duplicates all-but-one
         densities[duplicates, :] = 0  # Removes all duplicates
@@ -190,7 +168,7 @@ class DynamicDilatedAttention(nn.Module):
         out = torch.arange(context, device=util.d(x))[None, :, None, None].expand(batch, -1, num_points, 1)
         indices = torch.cat([out, indices], dim=3)
         # if self.mask:
-            # indices = util.flip(indices)
+        # indices = util.flip(indices)
         # Here we expand the indicies for each head in this transformer block
         indices = indices[:, None, :, :, :].expand(-1, self.n_heads, -1, -1, -1) \
             .contiguous() \
@@ -223,11 +201,42 @@ class DynamicDilatedAttention(nn.Module):
         batch_is = torch.arange(batch2, dtype=torch.long, device=util.d(x))[None, :].expand(np, -1).t().reshape(-1)
         indices2 = torch.cat([batch_is[:, None], indices.view(-1, 2)], dim=-1)
         dot = util.calc_vals(Q, K.transpose(-2, -1), indices2).view(batch2, -1)
-        # dot = weights * dot
         dot = sparse.logsoftmax(indices, weights * dot, (context, context)).exp()
         out = sparse.batchmm(indices, dot, size=(context, context), xmatrix=V)
         out = out.transpose(1, 2).contiguous().view(batch, context, self.n_heads * emb)
         return self.unify(out)
+
+
+class DynamicDilatedAttention(OneDimensionalSparseAttenion):
+    def __init__(self, 
+                 stride_predictor: nn.Module, 
+                 emb: int, 
+                 k: int = 4, 
+                 layer: int = 0, 
+                 gadditional: int = 2,
+                 nadditional: int = 0,
+                 n_heads: int = 4,
+                 **kwargs):
+        super().__init__(emb, n_heads, k=2*k+1, gadditional=gadditional, nadditional=nadditional)
+        self.layer = layer
+        self.num_p = k
+        # parameter sharing module that predicts the dilation and sigma given the layer number
+        self.stride_predictor = stride_predictor
+        self.register_buffer('mvalues', torch.ones((k,)))
+
+    def hyper(self, x: Tensor) -> Tuple[Tensor, Tensor, Tensor]:
+        params = self.stride_predictor(torch.tensor([self.layer], device=util.d(x)).float())
+        dilation, sigma = params[0], params[1]
+        wandb.log({f'{self.layer}.dilation': dilation, f'{self.layer}.sigma': sigma}, commit=False)
+        b, t = x.size(0), x.size(-2)
+        offsets = torch.arange(-self.num_p, self.num_p+1, device=util.d(x))*dilation
+        means = torch.arange(t, device=util.d(x))[None, :].expand(offsets.size(0), -1).t()
+        means = (offsets.expand_as(means) + means)[None, :, :].expand(b, -1, -1)
+        sigmas = sigma[None,None].expand_as(means).squeeze()
+        mvalues = self.mvalues[None, :].expand_as(sigmas)
+        means = sparse.transform_means(means, (t,), 'clamp')
+        sigmas = sparse.transform_sigmas(sigmas, (t,))
+        return means[..., None], sigmas, mvalues
 
 
 class ReallySparseAttention(nn.Module):
@@ -303,7 +312,8 @@ class ReallySparseAttention(nn.Module):
         # For each point (self.k), we expect to sample the 2**rank closest points from the first set of sampling,
         # then self.gadditional globally-sampled indices, and self.nadditional neighborhood-sampled indices.
         num_points = self.k * (2 ** rank + self.gadditional + self.nadditional)
-        assert indices.size() == (batch, context, num_points, 2)
+        assert indices.size() == (batch, context, num_points, 2), f'Expected size {(batch, context, num_points, 2)}. ' \
+                                                                  f'Got {indices.size()}'
         densities = sparse.densities(indices_fl, means, sigmas).clone()  # (B, C, P, self.k)
         duplicates = util.nduplicates(indices).to(torch.bool)  # (B, C, P) boolean mask of duplicates all-but-one
         densities[duplicates, :] = 0  # Removes all duplicates
@@ -351,7 +361,7 @@ class ReallySparseAttention(nn.Module):
         return self.unify(out)
 
 
-class SparseSelfAttention(nn.Module):
+class SparseSelfAttention(OneDimensionalSparseAttenion):
 
     def __init__(self,
                  emb: int,
@@ -363,7 +373,7 @@ class SparseSelfAttention(nn.Module):
                  gadditional: int = 2,
                  nadditional: int = 2,
                  mask: bool = True):
-        super().__init__()
+        super().__init__(emb, n_heads, k=k, gadditional=gadditional, nadditional=nadditional)
         self.n_heads = n_heads
         self.context_len = context_len
         self.emb = emb
@@ -402,79 +412,6 @@ class SparseSelfAttention(nn.Module):
         means = sparse.transform_means(means, (context_len,))
         sigmas = sparse.transform_sigmas(sigmas, (context_len,))
         return means, sigmas, values
-
-    def forward(self, x: Tensor) -> Tensor:
-        means, sigmas, values = self.hyper(x)  # (B, C, k, 1); (B, C, k, 1); (B, C, k)
-        batch, context, emb = x.size()  # (B, C, E)
-        rank = means.size(-1)
-        indices: Tensor = sparse.ngenerate(means,
-                                           self.gadditional,
-                                           self.nadditional,
-                                           rng=(context,),
-                                           relative_range=(2,),
-                                           cuda='cuda' in util.d(x))  # (B, C, P, 1)
-        assert ((indices < 0).sum().item() == 0) and ((indices >= context).sum().item() == 0), \
-            f'Found some indices out of bounds: indices < 0: {(indices < 0).sum().item()}; ' \
-            f'indices >= {context}: {(indices >= context).sum().item()}'
-        indices_fl = indices.float()
-        # For each point (self.k), we expect to sample the 2**rank closest points from the first set of sampling,
-        # then self.gadditional globally-sampled indices, and self.nadditional neighborhood-sampled indices.
-        num_points = self.k * (2 ** rank + self.gadditional + self.nadditional)
-        assert indices.size() == (batch, context, num_points, 1)
-        densities = sparse.densities(indices_fl, means, sigmas).clone()  # (B, C, P, self.k)
-        duplicates = util.nduplicates(indices).to(torch.bool)  # (B, C, P) boolean mask of duplicates all-but-one
-        densities[duplicates, :] = 0  # Removes all duplicates
-
-        # Normalize densities across all K probability distributions by summing
-        densities = densities / densities.sum(dim=2, keepdim=True)
-
-        weights = values[:, :, None, :].expand_as(densities)
-        weights = weights * densities
-        weights = weights.sum(dim=3)  # I don't get this at all (sum out the MVNs)
-
-        # Because we have 1 degree of freedom, this adds the first index of the attention mask, while the second
-        # is generated by our hyper network
-        out = torch.arange(context, device=util.d(x))[None, :, None, None].expand(batch, -1, num_points, 1)
-        indices = torch.cat([out, indices], dim=3)
-        if self.mask:
-            indices = util.flip(indices)
-        # Here we expand the indicies for each head in this transformer block
-        indices = indices[:, None, :, :, :].expand(-1, self.n_heads, -1, -1, -1) \
-            .contiguous() \
-            .view(batch * self.n_heads, context * num_points, -1)
-        # Here indices has a bunch of matrices where are just lists of coordinates.
-        # One matrix for each head for the whole input
-
-        # Now expand weights (= values * densities) for each head
-        weights = weights[:, None, :, :].expand(-1, self.n_heads, -1, -1) \
-            .contiguous() \
-            .view(batch * self.n_heads, context * num_points)
-
-        # Perform key, query, value transformation
-        K = self.to_keys(x).view(batch, context, self.n_heads, emb)
-        Q = self.to_queries(x).view(batch, context, self.n_heads, emb)
-        V = self.to_values(x).view(batch, context, self.n_heads, emb)
-
-        # Because the KQV tensors have head dimension, we need to fold them back to single
-        # First, transpose the head and context dimension to make it (batch, heads, context, emb)
-        # Then we just get a list of matrices of size (context, emb) which would essentially be the
-        # encoded sentences for each head, for each element in batch.
-        K = K.transpose(1, 2).contiguous().view(batch * self.n_heads, context, emb)
-        Q = Q.transpose(1, 2).contiguous().view(batch * self.n_heads, context, emb)
-        V = V.transpose(1, 2).contiguous().view(batch * self.n_heads, context, emb)
-
-        Q = Q / (emb ** (1 / 4))  # Normalize along the embedding dimension
-        K = K / (emb ** (1 / 4))
-
-        batch2, np, _ = indices.shape
-        batch_is = torch.arange(batch2, dtype=torch.long, device=util.d(x))[None, :].expand(np, -1).t().reshape(-1)
-        indices2 = torch.cat([batch_is[:, None], indices.view(-1, 2)], dim=-1)
-        dot = util.calc_vals(Q, K.transpose(-2, -1), indices2).view(batch2, -1)
-        # dot = weights * dot
-        dot = sparse.logsoftmax(indices, weights * dot, (context, context)).exp()
-        out = sparse.batchmm(indices, dot, size=(context, context), xmatrix=V)
-        out = out.transpose(1, 2).contiguous().view(batch, context, self.n_heads * emb)
-        return self.unify(out)
 
 
 # TAKEN FROM https://github.com/karpathy/ng-video-lecture/blob/master/gpt.py
