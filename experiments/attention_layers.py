@@ -222,11 +222,13 @@ class DynamicDilatedAttention(OneDimensionalSparseAttenion):
         self.num_p = k
         # parameter sharing module that predicts the dilation and sigma given the layer number
         self.stride_predictor = stride_predictor
-        self.register_buffer('mvalues', torch.ones((k,)))
+        # self.register_buffer('mvalues', torch.ones((k,)))
 
     def hyper(self, x: Tensor) -> Tuple[Tensor, Tensor, Tensor]:
+        b, c, e = x.size()
         params = self.stride_predictor(torch.tensor([self.layer], device=util.d(x)).float())
-        dilation, sigma = params[0], params[1]
+        dilation_scale = c//self.k
+        dilation, sigma = params[0]*dilation_scale, params[1]
         wandb.log({f'{self.layer}.dilation': dilation, f'{self.layer}.sigma': sigma}, commit=False)
         b, t = x.size(0), x.size(-2)
         offsets = torch.arange(-self.num_p, self.num_p+1, device=util.d(x))*dilation

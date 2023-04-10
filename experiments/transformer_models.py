@@ -124,7 +124,7 @@ class SparseTransformer(nn.Module):
                                                   nn.Linear(10, 10),
                                                   nn.Tanh(),
                                                   nn.Linear(10, 2),
-                                                  nn.ReLU())
+                                                  nn.Sigmoid())
         else:
             self.shared_predictor = None
         t_blocks = [TransformerBlock(context_len,
