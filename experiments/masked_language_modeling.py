@@ -120,7 +120,7 @@ def train(args: argparse.Namespace):
             source, target, mask = sample_batch(data_test,
                                                 tokenizer,
                                                 length=args.context,
-                                                batch_size=args.batch_size)
+                                                batch_size=mb_size)
             if cuda:
                 source, target, mask = source.cuda(), target.cuda(), mask.cuda()
             logits = model(source)
