@@ -84,12 +84,13 @@ def train(args: argparse.Namespace):
         num_micro_batches = args.batch_size // args.micro_batch_size
     else:
         num_micro_batches = 1
+    mb_size = args.batch_size if args.micro_batch_size is None else args.micro_batch_size
     for i in range(args.num_batches):
         model.train(True)
         source, target, mask = sample_batch(data_train,
                                             tokenizer,
                                             length=args.context,
-                                            batch_size=args.batch_size)
+                                            batch_size=args.mb_size)
         if cuda:
             source, target, mask = source.cuda(), target.cuda(), mask.cuda()
         instances_seen += source.size(0)
