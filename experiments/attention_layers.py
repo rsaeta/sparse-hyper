@@ -363,6 +363,38 @@ class ReallySparseAttention(nn.Module):
         return self.unify(out)
 
 
+class NonadaptiveSparseAttention(OneDimensionalSparseAttenion):
+    def __init__(self,
+                 emb: int,
+                 context_len: int,
+                 *,
+                 k: int = 8,
+                 hidden: int = 4,
+                 n_heads: int = 4,
+                 gadditional: int = 2,
+                 nadditional: int = 2,
+                 mask: bool = True,
+                 sigma_scale: float = 1.):
+        super().__init__(emb, n_heads, k=k, gadditional=gadditional, nadditional=nadditional)
+        self.pmeans = torch.nn.Parameter(torch.rand((context_len, k, 1)))
+        self.psigmas = torch.nn.Parameter(torch.rand((context_len, k)))
+        # Non-learnabe 
+        self.register_buffer('pvalues', torch.ones(k))
+        self.sigma_scale = sigma_scale
+
+    def hyper(self, x: torch.Tensor):
+        b, c, e = x.size()
+        k = self.k
+        means  = self.pmeans[None, :, :, :].expand(b, c, k, 1)
+        sigmas = self.psigmas[None, :, :].expand(b, c, k)
+        values = self.pvalues[None, None, :].expand(b, c, k)
+
+        means = sparse.transform_means(means, (c,))
+        sigmas = sparse.transform_sigmas(sigmas, (c,)) * self.sigma_scale
+
+        return means, sigmas, values
+
+
 class SparseSelfAttention(OneDimensionalSparseAttenion):
 
     def __init__(self,
@@ -383,9 +415,6 @@ class SparseSelfAttention(OneDimensionalSparseAttenion):
         self.gadditional = gadditional
         self.nadditional = nadditional
         self.mask = mask
-        self.to_keys = nn.Linear(emb, emb * n_heads, bias=False)
-        self.to_queries = nn.Linear(emb, emb * n_heads, bias=False)
-        self.to_values = nn.Linear(emb, emb * n_heads, bias=False)
         self.unify = nn.Linear(emb * n_heads, emb)
         self.register_buffer('mvalues', torch.ones((k,)))
         self.to_param = nn.Sequential(

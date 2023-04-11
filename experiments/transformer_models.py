@@ -12,6 +12,7 @@ from attention_layers import (
     NativeAttention,
     DynamicDilatedAttention,
     AlphaEntmax,
+    NonadaptiveSparseAttention,
 )
 
 try:
@@ -22,6 +23,16 @@ except ImportError:
 from typing import Tuple, List
 
 
+attention_types = Literal[
+    'dense', 
+    'sparse', 
+    'fixed', 
+    'sparse2d', 
+    'native',
+    'simple-sparse',
+]
+
+
 class TransformerBlock(nn.Module):
 
     def __init__(self,
@@ -30,7 +41,7 @@ class TransformerBlock(nn.Module):
                  heads: int = 4,
                  ff_hidden_mult: int = 4,
                  dropout: float = 0.0,
-                 attention_type: Literal['dense', 'sparse', 'fixed', 'sparse2d', 'native'] = 'dense',
+                 attention_type: attention_types = 'dense',
                  depth: int = 0,
                  shared_predictor: nn.Module = None,
                  **kwargs):
@@ -53,6 +64,8 @@ class TransformerBlock(nn.Module):
                                                   **kwargs)
         elif attention_type == 'entmax':
             self.attend = AlphaEntmax(heads, emb, context, **kwargs)
+        elif attention_type == 'simple-sparse':
+            self.attend = NonadaptiveSparseAttention(emb, context, n_heads=heads, **kwargs)
         else:
             raise ValueError(f'attention_type {attention_type} not recognized')
 
