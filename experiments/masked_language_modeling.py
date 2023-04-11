@@ -105,7 +105,7 @@ def train(args: argparse.Namespace):
             wandb.log({
                 'loss': bloss,
                 'lr': scheduler.get_last_lr()[0],
-                'tokens': instances_seen,
+                'tokens': instances_seen*args.context,
             }, commit=False, step=i)
             batch_loss = 0.
 
