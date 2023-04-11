@@ -88,6 +88,8 @@ def parse_args() -> Namespace:
     parser.add_argument('--log-every', dest='log_every',
                         type=int, default=1)
     parser.add_argument('--min-lr', dest='min_lr', type=float, default=5e-5)
+    parser.add_argument('--micro-batch-size', dest='micro_batch_size',
+                        type=int, default=None)
     options = parser.parse_args()
     print(options)
     return options
