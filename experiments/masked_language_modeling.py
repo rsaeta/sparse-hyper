@@ -59,6 +59,7 @@ def init_wandb(args):
             'embedding': args.embedding,
             'depth': args.depth,
             'k': args.num_indices,
+            'attention': args.attention_type,
         }
     )
 
@@ -78,13 +79,18 @@ def train(args: argparse.Namespace):
     n_validated = 0
     data_train, data_test = (data_train, data_val)
     batch_loss = 0.
-    for i in range(args.num_batches):
+    mb_loss = 0.
+    if args.micro_batch_size is not None:
+        num_micro_batches = args.batch_size // args.micro_batch_size
+    else:
+        num_micro_batches = 1
+    mb_size = args.batch_size if args.micro_batch_size is None else args.micro_batch_size
+    for i in range(args.num_batches * num_micro_batches):
         model.train(True)
-        optimizer.zero_grad()
         source, target, mask = sample_batch(data_train,
                                             tokenizer,
                                             length=args.context,
-                                            batch_size=args.batch_size)
+                                            batch_size=mb_size)
         if cuda:
             source, target, mask = source.cuda(), target.cuda(), mask.cuda()
         instances_seen += source.size(0)
@@ -93,22 +99,28 @@ def train(args: argparse.Namespace):
     
         loss = F.cross_entropy(logits[mask].reshape(-1, vocab_size), target[mask].reshape(-1), reduction='mean')
         batch_loss += loss.item()
+        loss.backward()
         if i % args.log_every == 0:
             bloss = batch_loss / args.log_every
-            wandb.log({'loss': bloss, 'lr': scheduler.get_last_lr()[0]}, commit=False, step=i)
+            wandb.log({
+                'loss': bloss,
+                'lr': scheduler.get_last_lr()[0],
+                'tokens': instances_seen*args.context,
+            }, commit=False, step=i)
             batch_loss = 0.
 
-        loss.backward()
-        torch.nn.utils.clip_grad_norm_(model.parameters(), args.clipping_value)
-        optimizer.step()
-        scheduler.step()
+        if i % num_micro_batches == 0:
+            torch.nn.utils.clip_grad_norm_(model.parameters(), args.clipping_value)
+            optimizer.step()
+            scheduler.step()
+            optimizer.zero_grad()
 
         if i % args.validation_every == 0 and i > 0:
             model.train(False)
             source, target, mask = sample_batch(data_test,
                                                 tokenizer,
                                                 length=args.context,
-                                                batch_size=args.batch_size)
+                                                batch_size=mb_size)
             if cuda:
                 source, target, mask = source.cuda(), target.cuda(), mask.cuda()
             logits = model(source)
