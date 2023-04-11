@@ -9,6 +9,8 @@ from argparse import Namespace, ArgumentParser
 import gzip
 import numpy as np
 from tokenizers import BertWordPieceTokenizer
+from typing import get_args
+from transformer_models import attention_types
 
 cuda = torch.cuda.is_available()
 
@@ -60,13 +62,7 @@ def parse_args() -> Namespace:
                         dest='gadditional', default=2, type=int)
     parser.add_argument('-V', '--validation-every', default=200,
                         dest='validation_every', type=int)
-    parser.add_argument('-A', '--attention-type', choices=['dense',
-                                                           'sparse',
-                                                           'fixed',
-                                                           'sparse2d',
-                                                           'native',
-                                                           'dilated',
-                                                           'entmax'],
+    parser.add_argument('-A', '--attention-type', choices=get_args(attention_types),
                         dest='attention_type', default='dense', type=str)
     parser.add_argument('-L', '--clipping-value', type=float,
                         dest='clipping_value', default=1.0)
