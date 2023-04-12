@@ -86,12 +86,27 @@ def parse_args() -> Namespace:
     parser.add_argument('--min-lr', dest='min_lr', type=float, default=5e-5)
     parser.add_argument('--micro-batch-size', dest='micro_batch_size',
                         type=int, default=None)
+    parser.add_argument('--model-type', dest='model_type', default=None, type=str)
     options = parser.parse_args()
     print(options)
     return options
 
 
 def get_model(args: Namespace, vocab_size: int, mask: bool = False) -> GeneratingTransformer:
+    attentions = None if args.model_type is None else [
+        'dilated',
+        'dilated',
+        'dilated',
+        'dense',
+        'dense',
+        'simple-sparse',
+        'simple-sparse',
+        'simple-sparse',
+        'sparse',
+        'sparse',
+        'sparse',
+        'dense',
+    ]
     model = GeneratingTransformer(
         args.depth,
         args.context,
@@ -102,8 +117,10 @@ def get_model(args: Namespace, vocab_size: int, mask: bool = False) -> Generatin
         nadditional=args.nadditional,
         gadditional=args.gadditional,
         attention_type=args.attention_type,
+        attentions=attentions,
         mask=mask,
     )
+    breakpoint()
     if args.load_model is not None:
         state_dict = torch.load(args.load_model, map_location=torch.device('cuda') \
                                 if cuda else torch.device('cpu'))

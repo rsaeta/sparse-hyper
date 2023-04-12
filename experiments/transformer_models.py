@@ -124,6 +124,7 @@ class SparseTransformer(nn.Module):
                  emb: int,
                  vocab_size: int,
                  attention_type: str = None,
+                 attentions: List[str] = None,
                  *args,
                  **kwargs):
         super().__init__()
@@ -131,7 +132,7 @@ class SparseTransformer(nn.Module):
         self.vocab_size = vocab_size
         self.token_embedding = nn.Embedding(num_embeddings=vocab_size, embedding_dim=emb)
         self.pos_embedding = nn.Embedding(num_embeddings=context_len, embedding_dim=emb)
-        if attention_type == 'dilated':
+        if (attentions is not None and 'dilated' in attentions) or (attention_type == 'dilated'):
             self.shared_predictor = nn.Sequential(nn.Linear(1, 10),
                                                   nn.ReLU(),
                                                   nn.Linear(10, 10),
@@ -140,14 +141,24 @@ class SparseTransformer(nn.Module):
                                                   nn.Sigmoid())
         else:
             self.shared_predictor = None
-        t_blocks = [TransformerBlock(context_len,
-                                      emb, 
-                                      *args, 
-                                      depth=depth, 
-                                      shared_predictor=self.shared_predictor, 
-                                      attention_type=attention_type,
-                                      **kwargs) 
-                        for depth in range(n_blocks)]
+        if attentions is not None:
+            t_blocks = [TransformerBlock(context_len,
+                                         emb, 
+                                         *args, 
+                                         depth=depth, 
+                                         shared_predictor=self.shared_predictor, 
+                                         attention_type=at,
+                                         **kwargs) 
+                            for depth, at in enumerate(attentions)]
+        else:
+            t_blocks = [TransformerBlock(context_len,
+                                         emb, 
+                                         *args, 
+                                         depth=depth, 
+                                         shared_predictor=self.shared_predictor, 
+                                         attention_type=attention_type,
+                                         **kwargs) 
+                            for depth in range(n_blocks)]
         self.t_blocks = nn.Sequential(*t_blocks)
 
     def embed(self, x: Tensor) -> Tensor:
@@ -214,4 +225,3 @@ class GeneratingTransformer(SparseTransformer):
         b, c, e = x.size()  # batch, context, embed
         x = self.to_probs(x.view(b * c, e)).view(b, c, self.vocab_size)
         return x
-

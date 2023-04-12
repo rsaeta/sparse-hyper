@@ -1,5 +1,5 @@
 import argparse
-
+import git
 import tokenizers
 
 from experiment_utils import (
@@ -51,6 +51,7 @@ def sample_batch(data, tokenizer, length, batch_size, mask_p=0.15):
 
 
 def init_wandb(args):
+
     wandb.init(
         project='sparse-masked-transformer',
         config={
@@ -60,6 +61,7 @@ def init_wandb(args):
             'depth': args.depth,
             'k': args.num_indices,
             'attention': args.attention_type,
+            'gitsha': git.Repo(search_parent_directories=True).head.object.hexsha,
         }
     )
 
