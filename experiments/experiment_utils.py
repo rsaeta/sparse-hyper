@@ -120,7 +120,6 @@ def get_model(args: Namespace, vocab_size: int, mask: bool = False) -> Generatin
         attentions=attentions,
         mask=mask,
     )
-    breakpoint()
     if args.load_model is not None:
         state_dict = torch.load(args.load_model, map_location=torch.device('cuda') \
                                 if cuda else torch.device('cpu'))
