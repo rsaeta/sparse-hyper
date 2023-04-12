@@ -207,9 +207,9 @@ def get_tokenizer(args: Namespace) -> tokenizers.Tokenizer:
         tokenizer_cls = ByteTokenizer
     else:
         raise NotImplementedError(f'Tokenizer {args.tokenizer} not yet implemented')
-    if args.tokenizer_file is not None:
-        tok = tokenizer_cls.from_pretrained(args.tokenizer_file)
-
+    tokenizer_fname = os.path.join('tokenizers', f'{args.tokenizer}_{os.path.basename(args.data)}.txt')
+    if os.path.exists(tokenizer_fname):
+        tok = tokenizer_cls.from_file(tokenizer_fname)
     else:
         tok = tokenizer_cls()
         tok.train([args.data], vocab_size=args.vocab_size)
