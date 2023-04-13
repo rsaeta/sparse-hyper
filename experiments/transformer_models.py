@@ -30,6 +30,7 @@ attention_types = Literal[
     'sparse2d', 
     'native',
     'simple-sparse',
+    'dilated',
 ]
 
 
