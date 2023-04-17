@@ -86,6 +86,11 @@ class SparseHead2(nn.Module):
         return out
 
 
+class ComposableAttention(nn.Module):
+    def forward(q, k, v):
+        raise NotImplementedError()
+
+
 class BlocksparseFixedSelfAttention(nn.Module):
 
     def __init__(self, emb: int, t: int, k: int, **kwargs):
