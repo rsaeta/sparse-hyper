@@ -112,7 +112,7 @@ class BigBirdBlockSparseAttention(nn.Module):
         key_layer = self.transpose_for_scores(self.key(hidden_states))
         value_layer = self.transpose_for_scores(self.value(hidden_states))
 
-        blocked_encoder_mask, band_mask, from_mask, to_mask = create_masks_for_block_sparse_attn(torch.ones(batch_size, seqlen), 1)
+        blocked_encoder_mask, band_mask, from_mask, to_mask = create_masks_for_block_sparse_attn(torch.ones(batch_size, seqlen, device=query_layer.device), 1)
         context_layer, attention_probs = self.bigbird_block_sparse_attention(
             query_layer,
             key_layer,
