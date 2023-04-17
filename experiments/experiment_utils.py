@@ -9,7 +9,12 @@ from argparse import Namespace, ArgumentParser
 import gzip
 import numpy as np
 from tokenizers import BertWordPieceTokenizer
-from typing import get_args
+
+try:
+    from typing import get_args
+except ImportError:
+    from typing_extensions import get_args
+
 from transformer_models import attention_types
 
 cuda = torch.cuda.is_available()
