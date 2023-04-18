@@ -3,6 +3,7 @@ from torch import nn, Tensor
 
 from _context import sparse
 from sparse import util
+from bigbird import BigBirdBlockSparseAttention, BigBirdConfig
 
 from attention_layers import (
     SparseSelfAttention, 
@@ -31,6 +32,7 @@ attention_types = Literal[
     'native',
     'simple-sparse',
     'dilated',
+    'bigbird',
 ]
 
 
@@ -45,6 +47,7 @@ class TransformerBlock(nn.Module):
                  attention_type: attention_types = 'dense',
                  depth: int = 0,
                  shared_predictor: nn.Module = None,
+                 k = 4,
                  **kwargs):
         super().__init__()  
         if attention_type == 'dense':
@@ -67,6 +70,9 @@ class TransformerBlock(nn.Module):
             self.attend = AlphaEntmax(heads, emb, context, **kwargs)
         elif attention_type == 'simple-sparse':
             self.attend = NonadaptiveSparseAttention(emb, context, n_heads=heads, **kwargs)
+        elif attention_type == 'bigbird':
+            cfg = BigBirdConfig(context, heads, emb, k, 1)
+            self.attend = BigBirdBlockSparseAttention(cfg)
         else:
             raise ValueError(f'attention_type {attention_type} not recognized')
 
