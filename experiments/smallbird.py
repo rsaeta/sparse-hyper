@@ -341,7 +341,6 @@ class SmallBirdSparseAttention(SparseSelfAttention):
         first_context_layer.unsqueeze_(2)
 
         # q[1] x (sliding_keys, random_keys, global_keys)
-
         second_key_mat = torch.cat(
             [
                 blocked_key_matrix[:, :, 0],
@@ -410,8 +409,9 @@ class SmallBirdSparseAttention(SparseSelfAttention):
         # randn attention scores for q[-2:2]
         # [b, h, m//wm-4, wm, -1] x [b, h, m//wm-4, r*wn, -1]
         rand_band_product = self.torch_bmm_nd_transpose(middle_query_matrix, gathered_key[:, :, 1:-1], ndim=5)
+        adaptive_rand_weights = adaptive_attn_weights[:,:,2:-2,None,:]
         #     ==> [b, h, m//wm-4, wm, r*wn]
-        rand_band_product = rand_band_product * rsqrt_d
+        rand_band_product = rand_band_product * rsqrt_d * adaptive_rand_weights
 
         # 1st block is global
         first_band_product = torch.einsum(
