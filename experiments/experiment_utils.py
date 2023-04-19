@@ -98,20 +98,25 @@ def parse_args() -> Namespace:
 
 
 def get_model(args: Namespace, vocab_size: int, mask: bool = False) -> GeneratingTransformer:
-    attentions = None if args.model_type is None else [
-        'dilated',
-        'dilated',
-        'dilated',
-        'dense',
-        'dense',
-        'simple-sparse',
-        'simple-sparse',
-        'simple-sparse',
-        'sparse',
-        'sparse',
-        'sparse',
-        'dense',
-    ]
+    if args.model_type is None:
+        attentions = None
+    elif args.model_type == 'dabirds':
+        attentions = [*['bigbird']*10, *['smallbird']*6]
+    else:
+        attentions = None if args.model_type is None else [
+            'dilated',
+            'dilated',
+            'dilated',
+            'dense',
+            'dense',
+            'simple-sparse',
+            'simple-sparse',
+            'simple-sparse',
+            'sparse',
+            'sparse',
+            'sparse',
+            'dense',
+        ]
     model = GeneratingTransformer(
         args.depth,
         args.context,
