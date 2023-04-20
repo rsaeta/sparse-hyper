@@ -409,7 +409,7 @@ class SmallBirdSparseAttention(SparseSelfAttention):
         # randn attention scores for q[-2:2]
         # [b, h, m//wm-4, wm, -1] x [b, h, m//wm-4, r*wn, -1]
         rand_band_product = self.torch_bmm_nd_transpose(middle_query_matrix, gathered_key[:, :, 1:-1], ndim=5)
-        adaptive_rand_weights = adaptive_attn_weights[:,:,2:-2,None,:]
+        adaptive_rand_weights = adaptive_attn_weights[:, :, 2:-2, None, :]
         #     ==> [b, h, m//wm-4, wm, r*wn]
         rand_band_product = rand_band_product * rsqrt_d * adaptive_rand_weights
 
