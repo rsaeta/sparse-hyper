@@ -4,7 +4,7 @@ from torch import nn, Tensor
 from _context import sparse
 from sparse import util
 from bigbird import BigBirdBlockSparseAttention, BigBirdConfig
-
+from smallbird import SmallBirdSparseAttention, SmallBirdConfig
 from attention_layers import (
     SparseSelfAttention, 
     BlocksparseFixedSelfAttention, 
@@ -33,6 +33,7 @@ attention_types = Literal[
     'simple-sparse',
     'dilated',
     'bigbird',
+    'smallbird',
 ]
 
 
@@ -73,6 +74,17 @@ class TransformerBlock(nn.Module):
         elif attention_type == 'bigbird':
             cfg = BigBirdConfig(context, heads, emb, k, 1)
             self.attend = BigBirdBlockSparseAttention(cfg)
+        elif attention_type == 'smallbird':
+            d = {
+                'max_position_embeddings': context,
+                'num_attention_heads': heads,
+                'hidden_size': emb,
+                'num_random_blocks': k,
+                'block_size': 1,
+                **kwargs,
+            }
+            cfg = SmallBirdConfig.from_dict(d)
+            self.attend = SmallBirdSparseAttention(cfg)
         else:
             raise ValueError(f'attention_type {attention_type} not recognized')
 
