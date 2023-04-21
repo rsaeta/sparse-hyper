@@ -5,6 +5,7 @@ import tokenizers
 import torch
 import torch._dynamo
 from functools import partial
+
 from transformer_models import GeneratingTransformer
 from argparse import Namespace, ArgumentParser
 import gzip
@@ -19,10 +20,13 @@ except ImportError:
 from transformer_models import attention_types
 
 cuda = torch.cuda.is_available()
+device = torch.device('cuda' if cuda else 'cpu')
 
+"""
 compile = torch.compile
 torch.set_float32_matmul_precision('high')
 torch._dynamo.config.suppress_errors = True
+"""
 
 def parse_args() -> Namespace:
     parser = ArgumentParser()
@@ -140,8 +144,8 @@ def get_model(args: Namespace, vocab_size: int, mask: bool = False) -> Generatin
         model.load_state_dict(state_dict)
     if cuda:
         model = model.cuda()
-    if compile is not None:
-        model = compile(model)
+    # if compile is not None:
+    #    model = compile(model)
     return model
 
 
@@ -208,6 +212,8 @@ class ByteTokenizer:
         self.min_token = 20e10
         self.max_token = 20e10
         self.mask_token = 20e10
+        self.pad_token = 20e10
+        self.max_len = -1
 
     def train(self, datas, **kwargs):
         chrs = set()
@@ -217,17 +223,23 @@ class ByteTokenizer:
         self.min_token = min(chrs).item()
         self.max_token = max(chrs).item()
         self.mask_token = self.max_token+1
+        self.pad_token = self.mask_token+1
 
     def get_vocab_size(self, with_added_tokens=True):
-        return self.mask_token+1
+        return self.mask_token+2 if with_added_tokens else self.mask_token
 
     def token_to_id(self, token):
         if token == '[MASK]':
             return self.mask_token
         return self.encode(token)
 
+    def enable_padding(self, *, length):
+        self.max_len = length
+
     def encode(self, s):
         ids = list(map(ord, s))
+        if self.max_len > 0:
+            ids += [self.pad_token] * (self.max_len - len(ids))
         encs = ByteEncoding(ids)
         return encs
 
@@ -245,7 +257,7 @@ def get_tokenizer(args: Namespace) -> tokenizers.Tokenizer:
     else:
         tok = tokenizer_cls()
         tok.train([args.data], vocab_size=args.vocab_size)
-
+    tok.enable_padding(length=args.context)
     return tok
 
 
