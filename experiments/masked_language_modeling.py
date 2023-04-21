@@ -33,7 +33,7 @@ def sample_batch(data, tokenizer, length, batch_size, mask_p=0.15):
     :return: A pair (input, target) of minteger matrices representing the input and target for the model.
     """
     mask_token = tokenizer.token_to_id('[MASK]')
-    byte_len = 50*length
+    byte_len = 50 * length
 
     # Sample the starting indices of the sequences to slice out.
     starts = torch.randint(size=(batch_size,), low=0, high=data.size(0) - byte_len)
@@ -47,8 +47,8 @@ def sample_batch(data, tokenizer, length, batch_size, mask_p=0.15):
     seqs_inputs.masked_fill_(mask, mask_token)
     if cuda:
         seqs_inputs = seqs_inputs.cuda()
-
-    return seqs_inputs, targets, mask
+    attention_masks = torch.ones((batch_size, length, length)).bool()
+    return seqs_inputs, attention_masks, targets, mask
 
 
 def init_wandb(args):
@@ -91,16 +91,16 @@ def train(args: argparse.Namespace):
     mb_size = args.batch_size if args.micro_batch_size is None else args.micro_batch_size
     for i in range(args.num_batches * num_micro_batches):
         model.train(True)
-        source, target, mask = sample_batch(data_train,
-                                            tokenizer,
-                                            length=args.context,
-                                            batch_size=mb_size)
+        source, attn_masks, target, mask = sample_batch(data_train,
+                                                        tokenizer,
+                                                        length=args.context,
+                                                        batch_size=mb_size)
         if cuda:
-            source, target, mask = source.cuda(), target.cuda(), mask.cuda()
+            source, attn_masks, target, mask = source.cuda(), attn_masks.cuda(), target.cuda(), mask.cuda()
         instances_seen += source.size(0)
 
-        logits = model(source)
-    
+        logits = model(source, attn_masks)
+
         loss = F.cross_entropy(logits[mask].reshape(-1, vocab_size), target[mask].reshape(-1), reduction='mean')
         batch_loss += loss.item()
         loss.backward()
@@ -109,7 +109,7 @@ def train(args: argparse.Namespace):
             wandb.log({
                 'loss': bloss,
                 'lr': scheduler.get_last_lr()[0],
-                'tokens': instances_seen*args.context,
+                'tokens': instances_seen * args.context,
             }, commit=False, step=i)
             batch_loss = 0.
 
@@ -121,17 +121,17 @@ def train(args: argparse.Namespace):
 
         if i % args.validation_every == 0 and i > 0:
             model.train(False)
-            source, target, mask = sample_batch(data_test,
-                                                tokenizer,
-                                                length=args.context,
-                                                batch_size=mb_size)
+            source, attn_masks, target, mask = sample_batch(data_test,
+                                                            tokenizer,
+                                                            length=args.context,
+                                                            batch_size=mb_size)
             if cuda:
-                source, target, mask = source.cuda(), target.cuda(), mask.cuda()
-            logits = model(source)
+                source, attn_masks, target, mask = source.cuda(), attn_masks.cuda(), target.cuda(), mask.cuda()
+            logits = model(source, attn_masks)
             loss = F.cross_entropy(logits[mask].reshape(-1, vocab_size), target[mask].reshape(-1), reduction='mean')
             to_log = {'validation_loss': loss.item()}
             print('wandblog', to_log)
-            wandb.log(to_log, step=i//args.validation_every)
+            wandb.log(to_log, step=i // args.validation_every)
             n_validated += 1
             if args.save_dir is None:
                 continue
@@ -144,9 +144,10 @@ def train(args: argparse.Namespace):
                     context = m.size(0)
                     m = m.view(-1, 2)
                     s = s.view(-1)
-                    attention_viz(m, s, (context, context), save_file=f'{args.save_dir}/{n_validated//args.save_every}_attention_{layer}.pdf')
+                    attention_viz(m, s, (context, context),
+                                  save_file=f'{args.save_dir}/{n_validated // args.save_every}_attention_{layer}.pdf')
             if n_validated % args.save_every == 0:
-                f_name = f'{args.save_dir}/checkpoint_{n_validated//args.save_every}_'
+                f_name = f'{args.save_dir}/checkpoint_{n_validated // args.save_every}_'
                 torch.save(model.state_dict(), f_name + 'model.pt')
                 torch.save(optimizer.state_dict(), f_name + 'optimizer.pt')
                 torch.save(scheduler.state_dict(), f_name + 'scheduler.pt')
