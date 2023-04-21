@@ -39,6 +39,43 @@ def init_wandb(args):
     )
 
 
+def sample_batch(data, tokenizer, length, batch_size, mask_p=0.15):
+    """
+    Takes the data (a single sequence of tokens) and slices out a batch of subsequences to provide as input to the model
+    while also randomly masking a single entry in the sequence to the mask_token provided.
+    :param data: The (training) data. A single vector of tokens represented by integers
+    :param length: The length of the subsequences in the batch.
+    :param batch_size: The number of subsequences in the batch
+    :param tokenizer: The tokenizer that is used to parse the texts
+    :param mask_p: The probability of masking a token
+    :return: A pair (input, target) of minteger matrices representing the input and target for the model.
+    """
+    mask_token = tokenizer.token_to_id('[MASK]')
+    byte_len = 10 * length
+
+    # Sample the starting indices of the sequences to slice out.
+    starts = torch.randint(size=(batch_size,), low=0, high=data.size(0) - byte_len)
+
+    # Slice out the input sequences
+    strs = [ttos(data[start:start + byte_len]) for start in starts]
+    attention_masks = []
+    encoded_ids = []
+    for s in strs:
+        encoded = tokenizer.encode(s)
+        encoded_ids.append(encoded.ids[0:length])
+        attention_masks.append(encoded.attention_mask[0:length])
+    seqs_inputs = torch.tensor(encoded_ids)
+    mask = torch.rand(seqs_inputs.size()) < mask_p
+    targets = seqs_inputs.detach().clone()
+    seqs_inputs.masked_fill_(mask, mask_token)
+    if cuda:
+        seqs_inputs = seqs_inputs.cuda()
+    attention_masks = torch.tensor(attention_masks).bool()
+    c = attention_masks.size(-1)
+    attention_masks = attention_masks[:, None, :].expand(-1, c, -1)
+    return seqs_inputs, attention_masks, targets, mask
+
+
 def train(args: argparse.Namespace):
     setup(args)
     tokenizer = get_tokenizer(args)
@@ -162,39 +199,3 @@ def main():
 if __name__ == '__main__':
     main()
 
-
-def sample_batch(data, tokenizer, length, batch_size, mask_p=0.15):
-    """
-    Takes the data (a single sequence of tokens) and slices out a batch of subsequences to provide as input to the model
-    while also randomly masking a single entry in the sequence to the mask_token provided.
-    :param data: The (training) data. A single vector of tokens represented by integers
-    :param length: The length of the subsequences in the batch.
-    :param batch_size: The number of subsequences in the batch
-    :param tokenizer: The tokenizer that is used to parse the texts
-    :param mask_p: The probability of masking a token
-    :return: A pair (input, target) of minteger matrices representing the input and target for the model.
-    """
-    mask_token = tokenizer.token_to_id('[MASK]')
-    byte_len = 50 * length
-
-    # Sample the starting indices of the sequences to slice out.
-    starts = torch.randint(size=(batch_size,), low=0, high=data.size(0) - byte_len)
-
-    # Slice out the input sequences
-    strs = [ttos(data[start:start + byte_len]) for start in starts]
-    attention_masks = []
-    encoded_ids = []
-    for s in strs:
-        encoded = tokenizer.encode(s)
-        encoded_ids.append(encoded.ids)
-        attention_masks.append(encoded.attention_mask)
-    seqs_inputs = torch.cat(encoded_ids)
-    mask = torch.rand(seqs_inputs.size()) < mask_p
-    targets = seqs_inputs.detach().clone()
-    seqs_inputs.masked_fill_(mask, mask_token)
-    if cuda:
-        seqs_inputs = seqs_inputs.cuda()
-    attention_masks = torch.tensor(attention_masks).bool()
-    c = attention_masks.size(-1)
-    attention_masks = attention_masks[:, None, :].expand(-1, c, -1)
-    return seqs_inputs, attention_masks, targets, mask
