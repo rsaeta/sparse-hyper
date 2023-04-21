@@ -3,6 +3,7 @@ import json
 
 import tokenizers
 import torch
+import torch._dynamo
 from functools import partial
 from transformer_models import GeneratingTransformer
 from argparse import Namespace, ArgumentParser
@@ -19,6 +20,9 @@ from transformer_models import attention_types
 
 cuda = torch.cuda.is_available()
 
+compile = torch.compile
+torch.set_float32_matmul_precision('high')
+torch._dynamo.config.suppress_errors = True
 
 def parse_args() -> Namespace:
     parser = ArgumentParser()
@@ -136,6 +140,8 @@ def get_model(args: Namespace, vocab_size: int, mask: bool = False) -> Generatin
         model.load_state_dict(state_dict)
     if cuda:
         model = model.cuda()
+    if compile is not None:
+        model = compile(model)
     return model
 
 
