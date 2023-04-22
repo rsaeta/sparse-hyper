@@ -177,7 +177,7 @@ def lr(args, i):
     return max(next_lr, args.min_lr)
 
 
-def learners(model, args):
+def learners(model, args, load=True):
     optimizer = torch.optim.AdamW(lr=args.learning_rate, params=model.parameters())
     scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer,
                                                   partial(lr, args))
@@ -185,7 +185,7 @@ def learners(model, args):
         scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer,
                                                       lambda _: 1.)
         return optimizer, scheduler
-    if args.load_model is not None:
+    if args.load_model is not None and load:
         optimizername = args.load_model.replace('model.pt', 'optimizer.pt')
         schedulername = args.load_model.replace('model.pt', 'scheduler.pt')
         if os.path.isfile(optimizername):
