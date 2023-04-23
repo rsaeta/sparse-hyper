@@ -39,7 +39,7 @@ def init_wandb(args):
     )
 
 
-def sample_batch(data, tokenizer, length, batch_size, mask_p=0.15):
+def sample_batch(data, tokenizer, length, batch_size, min_length, mask_p=0.15):
     """
     Takes the data (a single sequence of tokens) and slices out a batch of subsequences to provide as input to the model
     while also randomly masking a single entry in the sequence to the mask_token provided.
@@ -47,6 +47,7 @@ def sample_batch(data, tokenizer, length, batch_size, mask_p=0.15):
     :param length: The length of the subsequences in the batch.
     :param batch_size: The number of subsequences in the batch
     :param tokenizer: The tokenizer that is used to parse the texts
+    :param min_length: the min length of sequences to train on variable-length documents
     :param mask_p: The probability of masking a token
     :return: A pair (input, target) of minteger matrices representing the input and target for the model.
     """
@@ -55,22 +56,23 @@ def sample_batch(data, tokenizer, length, batch_size, mask_p=0.15):
 
     # Sample the starting indices of the sequences to slice out.
     starts = torch.randint(size=(batch_size,), low=0, high=data.size(0) - byte_len)
+    lens = torch.randint(size=(batch_size, ), low=min_length, high=length)
 
     # Slice out the input sequences
     strs = [ttos(data[start:start + byte_len]) for start in starts]
     attention_masks = []
     encoded_ids = []
-    for s in strs:
-        encoded = tokenizer.encode(s)
+    for s, l in zip(strs, lens):
+        encoded = tokenizer.encode(s[:int(l*3.5)])
         encoded_ids.append(encoded.ids[0:length])
         attention_masks.append(encoded.attention_mask[0:length])
     seqs_inputs = torch.tensor(encoded_ids)
-    mask = torch.rand(seqs_inputs.size()) < mask_p
+    attention_masks = torch.tensor(attention_masks).bool()
+    mask = torch.logical_and((torch.rand(seqs_inputs.size()) < mask_p), attention_masks)
     targets = seqs_inputs.detach().clone()
     seqs_inputs.masked_fill_(mask, mask_token)
     if cuda:
         seqs_inputs = seqs_inputs.cuda()
-    attention_masks = torch.tensor(attention_masks).bool()
     c = attention_masks.size(-1)
     attention_masks = attention_masks[:, None, :].expand(-1, c, -1)
     return seqs_inputs, attention_masks, targets, mask
@@ -102,7 +104,8 @@ def train(args: argparse.Namespace):
         source, attn_masks, target, mask = sample_batch(data_train,
                                                         tokenizer,
                                                         length=args.context,
-                                                        batch_size=mb_size)
+                                                        batch_size=mb_size,
+                                                        min_length=args.context//2)
         if cuda:
             source, attn_masks, target, mask = source.cuda(), attn_masks.cuda(), target.cuda(), mask.cuda()
         instances_seen += source.size(0)
@@ -132,7 +135,8 @@ def train(args: argparse.Namespace):
             source, attn_masks, target, mask = sample_batch(data_test,
                                                             tokenizer,
                                                             length=args.context,
-                                                            batch_size=mb_size)
+                                                            batch_size=mb_size,
+                                                            min_length=args.context//2)
             if cuda:
                 source, attn_masks, target, mask = source.cuda(), attn_masks.cuda(), target.cuda(), mask.cuda()
             logits = model(source, attn_masks)
