@@ -7,7 +7,6 @@ from experiment_utils import (
     parse_args,
     get_model,
     learners,
-    cuda,
     setup,
     enwik8,
     get_tokenizer,
@@ -56,14 +55,14 @@ def sample_batch(data, tokenizer, length, batch_size, min_length, mask_p=0.15):
 
     # Sample the starting indices of the sequences to slice out.
     starts = torch.randint(size=(batch_size,), low=0, high=data.size(0) - byte_len)
-    lens = torch.randint(size=(batch_size, ), low=min_length, high=length)
+    lens = torch.randint(size=(batch_size,), low=min_length, high=length)
 
     # Slice out the input sequences
     strs = [ttos(data[start:start + byte_len]) for start in starts]
     attention_masks = []
     encoded_ids = []
     for s, l in zip(strs, lens):
-        encoded = tokenizer.encode(s[:int(l*3.5)])
+        encoded = tokenizer.encode(s[:int(l * 4)])
         encoded_ids.append(encoded.ids[0:length])
         attention_masks.append(encoded.attention_mask[0:length])
     seqs_inputs = torch.tensor(encoded_ids)
@@ -93,7 +92,6 @@ def train(args: argparse.Namespace):
     n_validated = 0
     data_train, data_test = (data_train, data_val)
     batch_loss = 0.
-    mb_loss = 0.
     if args.micro_batch_size is not None:
         num_micro_batches = args.batch_size // args.micro_batch_size
     else:
@@ -105,7 +103,7 @@ def train(args: argparse.Namespace):
                                                         tokenizer,
                                                         length=args.context,
                                                         batch_size=mb_size,
-                                                        min_length=args.context//2)
+                                                        min_length=args.context // 2)
         if cuda:
             source, attn_masks, target, mask = source.cuda(), attn_masks.cuda(), target.cuda(), mask.cuda()
         instances_seen += source.size(0)
@@ -136,7 +134,7 @@ def train(args: argparse.Namespace):
                                                             tokenizer,
                                                             length=args.context,
                                                             batch_size=mb_size,
-                                                            min_length=args.context//2)
+                                                            min_length=args.context // 2)
             if cuda:
                 source, attn_masks, target, mask = source.cuda(), attn_masks.cuda(), target.cuda(), mask.cuda()
             logits = model(source, attn_masks)
@@ -176,10 +174,11 @@ def interact(args):
     vocab_size = tokenizer.get_vocab_size()
     model = get_model(args, vocab_size=vocab_size, mask=False)
     data_train, data_val, data_test = enwik8(args.data)
-    source, target, mask = sample_batch(data_train,
-                                        tokenizer=tokenizer,
-                                        length=args.context,
-                                        batch_size=args.batch_size)
+    source, attn_masks, target, mask = sample_batch(data_train,
+                                                    tokenizer=tokenizer,
+                                                    length=args.context,
+                                                    batch_size=args.batch_size,
+                                                    min_length=args.context // 2)
     if cuda:
         source, target, mask = source.cuda(), target.cuda(), mask.cuda()
 
@@ -202,4 +201,3 @@ def main():
 
 if __name__ == '__main__':
     main()
-
