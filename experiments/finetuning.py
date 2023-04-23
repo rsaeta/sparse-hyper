@@ -1,7 +1,6 @@
 import torch
 from torch import nn, Tensor
 from torch.nn import functional as F
-from argparse import Namespace
 import experiment_utils as utils
 import pandas as pd
 
@@ -34,7 +33,7 @@ class GLUETuned(nn.Module):
         logits = self.model.t_blocks(embedded, attn_masks)
         if self.final is not None:
             if self.classification:
-                logits = logits.view(b, -1)
+                logits = logits.view(b, -1)  # Collapse embedded sentence to single dimension per item in batch
             logits = self.final(logits)
         return logits
 
