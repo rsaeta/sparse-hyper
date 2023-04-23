@@ -97,12 +97,12 @@ class TransformerBlock(nn.Module):
             nn.Linear(ff_hidden_mult * emb, emb)
         )
 
-    def forward(self, x: Tensor) -> Tensor:
-        x = self.dropout(x + self.attend(self.norm1(x)))
+    def forward(self, x: Tensor, attention_mask: Tensor) -> Tensor:
+        x = self.dropout(x + self.attend(self.norm1(x), attention_mask))
         x = self.dropout(x + self.ff(self.norm2(x)))
         return x
 
-    def forward_for_plot(self, x: Tensor) -> Tuple[Tensor, Tuple[Tensor, Tensor, Tensor]]:
+    def forward_for_plot(self, x: Tensor, attention_mask) -> Tuple[Tensor, Tuple[Tensor, Tensor, Tensor]]:
         normed1 = self.norm1(x)
         if isinstance(self.attend, MultiHeadAttention):
             m = torch.ones(x.size()).nonzero()
@@ -136,6 +136,14 @@ class TransformerBlock(nn.Module):
         return self.dropout(x), (m, s, v)
 
 
+class MaskedSequential(nn.Sequential):
+    """To handle passing multiple values to the forward function"""
+    def forward(self, x: Tensor, mask: Tensor):
+        for module in self._modules.values():
+            x = module(x, mask)
+        return x
+
+
 class SparseTransformer(nn.Module):
     def __init__(self,
                  n_blocks: int,
@@ -151,6 +159,7 @@ class SparseTransformer(nn.Module):
         self.vocab_size = vocab_size
         self.token_embedding = nn.Embedding(num_embeddings=vocab_size, embedding_dim=emb)
         self.pos_embedding = nn.Embedding(num_embeddings=context_len, embedding_dim=emb)
+
         if (attentions is not None and 'dilated' in attentions) or (attention_type == 'dilated'):
             self.shared_predictor = nn.Sequential(nn.Linear(1, 10),
                                                   nn.ReLU(),
@@ -178,7 +187,7 @@ class SparseTransformer(nn.Module):
                                          attention_type=attention_type,
                                          **kwargs) 
                             for depth in range(n_blocks)]
-        self.t_blocks = nn.Sequential(*t_blocks)
+        self.t_blocks = MaskedSequential(*t_blocks)
 
     def embed(self, x: Tensor) -> Tensor:
         # Here we'll do some embedding addition
@@ -188,9 +197,9 @@ class SparseTransformer(nn.Module):
             .expand(b, -1, -1)
         return positions + x
 
-    def forward(self, x: Tensor) -> Tensor:
+    def forward(self, x: Tensor, attention_mask: Tensor) -> Tensor:
         embedded = self.embed(x)  # (batch, context_len, emb)
-        t_blocked = self.t_blocks(embedded)  # (batch, context_len, emb)
+        t_blocked = self.t_blocks(embedded, attention_mask)  # (batch, context_len, emb)
         done = self.post_tblocks(t_blocked)
         return done
 
