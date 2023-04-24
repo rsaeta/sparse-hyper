@@ -34,6 +34,7 @@ def init_wandb(args):
             'k': args.num_indices,
             'attention': args.attention_type,
             'gitsha': git.Repo(dir_path, search_parent_directories=True).head.object.hexsha,
+            'model_type': args.model_type,
         }
     )
 
@@ -85,7 +86,7 @@ def train(args: argparse.Namespace):
     optimizer, scheduler = learners(model, args)
     instances_seen = 0
     data_train, data_val, data_test = enwik8(args.data)
-
+    pad_token = tokenizer.token_to_id('[PAD]')
     if args.watch_model:
         wandb.watch(model)
     # We want the mask token index to not be a token in the actual data.
@@ -106,7 +107,7 @@ def train(args: argparse.Namespace):
                                                         min_length=args.context // 2)
         if cuda:
             source, attn_masks, target, mask = source.cuda(), attn_masks.cuda(), target.cuda(), mask.cuda()
-        instances_seen += source.size(0)
+        instances_seen += (source != pad_token).sum()
 
         logits = model(source, attn_masks)
 
