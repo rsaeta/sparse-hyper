@@ -5,6 +5,7 @@ from _context import sparse
 from sparse import util
 from bigbird import BigBirdBlockSparseAttention, BigBirdConfig
 from smallbird import SmallBirdSparseAttention, SmallBirdConfig
+from smallest_bird import SmallerBirdConfig, SmallerBirdSparseAttention
 from attention_layers import (
     SparseSelfAttention, 
     BlocksparseFixedSelfAttention, 
@@ -34,6 +35,7 @@ attention_types = Literal[
     'dilated',
     'bigbird',
     'smallbird',
+    'smallerbird',
 ]
 
 
@@ -85,6 +87,17 @@ class TransformerBlock(nn.Module):
             }
             cfg = SmallBirdConfig.from_dict(d)
             self.attend = SmallBirdSparseAttention(cfg)
+        elif attention_type == 'smallerbird':
+            d = {
+                'max_position_embeddings': context,
+                'num_attention_heads': heads,
+                'hidden_size': emb,
+                'num_random_blocks': k,
+                'block_size': 1,
+                **kwargs,
+            }
+            cfg = SmallerBirdConfig.from_dict(d)
+            self.attend = SmallerBirdSparseAttention(cfg)
         else:
             raise ValueError(f'attention_type {attention_type} not recognized')
 

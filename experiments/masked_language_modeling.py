@@ -142,7 +142,7 @@ def train(args: argparse.Namespace):
             loss = F.cross_entropy(logits[mask].reshape(-1, vocab_size), target[mask].reshape(-1), reduction='mean')
             to_log = {'validation_loss': loss.item()}
             print('wandblog', to_log)
-            wandb.log(to_log, step=i // args.validation_every)
+            wandb.log(to_log, step=i // args.validation_every, commit=False)
             n_validated += 1
             if args.save_dir is None:
                 continue
