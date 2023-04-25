@@ -7,7 +7,6 @@ from experiment_utils import (
     parse_args,
     get_model,
     learners,
-    cuda,
     setup,
     enwik8,
     get_tokenizer,
@@ -35,11 +34,12 @@ def init_wandb(args):
             'k': args.num_indices,
             'attention': args.attention_type,
             'gitsha': git.Repo(dir_path, search_parent_directories=True).head.object.hexsha,
+            'model_type': args.model_type,
         }
     )
 
 
-def sample_batch(data, tokenizer, length, batch_size, mask_p=0.15):
+def sample_batch(data, tokenizer, length, batch_size, min_length, mask_p=0.15):
     """
     Takes the data (a single sequence of tokens) and slices out a batch of subsequences to provide as input to the model
     while also randomly masking a single entry in the sequence to the mask_token provided.
@@ -47,6 +47,7 @@ def sample_batch(data, tokenizer, length, batch_size, mask_p=0.15):
     :param length: The length of the subsequences in the batch.
     :param batch_size: The number of subsequences in the batch
     :param tokenizer: The tokenizer that is used to parse the texts
+    :param min_length: the min length of sequences to train on variable-length documents
     :param mask_p: The probability of masking a token
     :return: A pair (input, target) of minteger matrices representing the input and target for the model.
     """
@@ -55,22 +56,23 @@ def sample_batch(data, tokenizer, length, batch_size, mask_p=0.15):
 
     # Sample the starting indices of the sequences to slice out.
     starts = torch.randint(size=(batch_size,), low=0, high=data.size(0) - byte_len)
+    lens = torch.randint(size=(batch_size,), low=min_length, high=length)
 
     # Slice out the input sequences
     strs = [ttos(data[start:start + byte_len]) for start in starts]
     attention_masks = []
     encoded_ids = []
-    for s in strs:
-        encoded = tokenizer.encode(s)
+    for s, l in zip(strs, lens):
+        encoded = tokenizer.encode(s[:int(l * 4)])
         encoded_ids.append(encoded.ids[0:length])
         attention_masks.append(encoded.attention_mask[0:length])
     seqs_inputs = torch.tensor(encoded_ids)
-    mask = torch.rand(seqs_inputs.size()) < mask_p
+    attention_masks = torch.tensor(attention_masks).bool()
+    mask = torch.logical_and((torch.rand(seqs_inputs.size()) < mask_p), attention_masks)
     targets = seqs_inputs.detach().clone()
     seqs_inputs.masked_fill_(mask, mask_token)
     if cuda:
         seqs_inputs = seqs_inputs.cuda()
-    attention_masks = torch.tensor(attention_masks).bool()
     c = attention_masks.size(-1)
     attention_masks = attention_masks[:, None, :].expand(-1, c, -1)
     return seqs_inputs, attention_masks, targets, mask
@@ -85,14 +87,13 @@ def train(args: argparse.Namespace):
     optimizer, scheduler = learners(model, args)
     tokens_seen = 0
     data_train, data_val, data_test = enwik8(args.data)
-
+    pad_token = tokenizer.token_to_id('[PAD]')
     if args.watch_model:
         wandb.watch(model)
     # We want the mask token index to not be a token in the actual data.
     n_validated = 0
     data_train, data_test = (data_train, data_val)
     batch_loss = 0.
-    mb_loss = 0.
     if args.micro_batch_size is not None:
         num_micro_batches = args.batch_size // args.micro_batch_size
     else:
@@ -103,11 +104,12 @@ def train(args: argparse.Namespace):
         source, attn_masks, target, mask = sample_batch(data_train,
                                                         tokenizer,
                                                         length=args.context,
-                                                        batch_size=mb_size)
+                                                        batch_size=mb_size,
+                                                        min_length=args.context // 2)
         if cuda:
             source, attn_masks, target, mask = source.cuda(), attn_masks.cuda(), target.cuda(), mask.cuda()
-        tokens_seen += (source != pad_token).sum()
 
+        tokens_seen += (source != pad_token).sum()
         logits = model(source, attn_masks)
 
         loss = F.cross_entropy(logits[mask].reshape(-1, vocab_size), target[mask].reshape(-1), reduction='mean')
@@ -133,14 +135,15 @@ def train(args: argparse.Namespace):
             source, attn_masks, target, mask = sample_batch(data_test,
                                                             tokenizer,
                                                             length=args.context,
-                                                            batch_size=mb_size)
+                                                            batch_size=mb_size,
+                                                            min_length=args.context // 2)
             if cuda:
                 source, attn_masks, target, mask = source.cuda(), attn_masks.cuda(), target.cuda(), mask.cuda()
             logits = model(source, attn_masks)
             loss = F.cross_entropy(logits[mask].reshape(-1, vocab_size), target[mask].reshape(-1), reduction='mean')
             to_log = {'validation_loss': loss.item()}
             print('wandblog', to_log)
-            wandb.log(to_log, step=i // args.validation_every)
+            wandb.log(to_log, step=i // args.validation_every, commit=False)
             n_validated += 1
             if args.save_dir is None:
                 continue
@@ -173,10 +176,11 @@ def interact(args):
     vocab_size = tokenizer.get_vocab_size()
     model = get_model(args, vocab_size=vocab_size, mask=False)
     data_train, data_val, data_test = enwik8(args.data)
-    source, target, mask = sample_batch(data_train,
-                                        tokenizer=tokenizer,
-                                        length=args.context,
-                                        batch_size=args.batch_size)
+    source, attn_masks, target, mask = sample_batch(data_train,
+                                                    tokenizer=tokenizer,
+                                                    length=args.context,
+                                                    batch_size=args.batch_size,
+                                                    min_length=args.context // 2)
     if cuda:
         source, target, mask = source.cuda(), target.cuda(), mask.cuda()
 
@@ -199,4 +203,3 @@ def main():
 
 if __name__ == '__main__':
     main()
-

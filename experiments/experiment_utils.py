@@ -3,7 +3,11 @@ import json
 
 import tokenizers
 import torch
-import torch._dynamo
+try:
+    import torch._dynamo
+    supports_dyno = True
+except:
+    supports_dyno = False
 from functools import partial
 
 from transformer_models import GeneratingTransformer
@@ -202,8 +206,9 @@ def learners(model, args, load=True):
 
 class ByteEncoding:
 
-    def __init__(self, ids):
+    def __init__(self, ids, masks):
         self.ids = ids
+        self.attention_mask = masks
 
 
 class ByteTokenizer:
@@ -231,16 +236,21 @@ class ByteTokenizer:
     def token_to_id(self, token):
         if token == '[MASK]':
             return self.mask_token
-        return self.encode(token)
+        elif token == '[PAD]':
+            return self.pad_token
+        return self.encode(token).ids
 
     def enable_padding(self, *, length):
         self.max_len = length
 
     def encode(self, s):
         ids = list(map(ord, s))
+        attentions = [1]*len(ids)
         if self.max_len > 0:
-            ids += [self.pad_token] * (self.max_len - len(ids))
-        encs = ByteEncoding(ids)
+            num_pad = self.max_len - len(ids)
+            ids += [self.pad_token] * num_pad
+            attentions += [0] * num_pad
+        encs = ByteEncoding(ids, attentions)
         return encs
 
 
