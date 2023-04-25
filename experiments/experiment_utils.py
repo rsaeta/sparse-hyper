@@ -32,6 +32,7 @@ torch.set_float32_matmul_precision('high')
 torch._dynamo.config.suppress_errors = True
 """
 
+
 def parse_args() -> Namespace:
     parser = ArgumentParser()
     parser.add_argument('-N', '--num-batches',
@@ -104,8 +105,8 @@ def parse_args() -> Namespace:
     parser.add_argument('--micro-batch-size', dest='micro_batch_size',
                         type=int, default=None)
     parser.add_argument('--model-type', dest='model_type', default=None, type=str)
+    parser.add_argument('--resume-run', dest='resume_run', default=None, type=str)
     options = parser.parse_args()
-    print(options)
     return options
 
 

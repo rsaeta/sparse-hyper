@@ -1,5 +1,9 @@
+import json
 import os
 import argparse
+import re
+from typing import Optional
+
 import git
 import tokenizers
 
@@ -191,14 +195,58 @@ def interact(args):
     print('\n'.join(map(lambda t: ttos(t, tokenizer), [target[0], source[0], preds[0]])))
 
 
+def find_latest_model(path: str) -> Optional[str]:
+    """Finds the latest model saved in path"""
+    files = os.listdir(path)
+    max_checkpoint = -1
+    for f in files:
+        match = re.match('.*/?checkpoint_(\d+)_model.pt', f)
+        if match is not None:
+            if int(match[1]) > max_checkpoint:
+                max_checkpoint = int(match[1])
+    checkpoint = os.path.join(path, f'checkpoint_{max_checkpoint}_model.pt')
+    if os.path.exists(checkpoint):
+        return checkpoint
+    return None
+
+
+def get_resume_args(args):
+    config_fname = os.path.join(args.resume_run, 'config.json')
+    latest_model_checkpoint = find_latest_model(args.resume_run)
+    new_args = argparse.Namespace()
+    with open(config_fname) as f:
+        def_args = json.load(f)
+    new_args.__dict__.update(**def_args)
+    if args.save_dir is None:  # remap savedir
+        match = re.match('(.*)(\d+)', new_args.save_dir)
+        if match is not None:
+            next_i = int(match[2]) + 1
+            next_path = f'{match[1]}{next_i}'
+        else:
+            next_i = 2
+            next_path = f'{new_args.save_dir}{next_i}'
+        new_args.__dict__.update(save_dir=next_path)
+    if latest_model_checkpoint is not None:
+        new_args.__dict__.update(load_model=latest_model_checkpoint)
+    new_args.__dict__.update(**{k: v for k, v in args.__dict__.items() if v is not None})
+    args = new_args
+    return args
+
+
 def main():
     args = parse_args()
+    if args.resume_run is not None:
+        args = get_resume_args(args)
+    breakpoint()
+    print(args)
     init_wandb(args)
-    if args.interact:
-        interact(args)
-        return
-    train(args)
-    wandb.finish()
+    try:
+        if args.interact:
+            interact(args)
+        else:
+            train(args)
+    finally:
+        wandb.finish()
 
 
 if __name__ == '__main__':
