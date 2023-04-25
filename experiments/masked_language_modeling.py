@@ -80,9 +80,10 @@ def train(args: argparse.Namespace):
     setup(args)
     tokenizer = get_tokenizer(args)
     vocab_size = tokenizer.get_vocab_size()
+    pad_token = tokenizer.token_to_id('[PAD]')
     model = get_model(args, vocab_size=vocab_size, mask=False)
     optimizer, scheduler = learners(model, args)
-    instances_seen = 0
+    tokens_seen = 0
     data_train, data_val, data_test = enwik8(args.data)
 
     if args.watch_model:
@@ -105,7 +106,7 @@ def train(args: argparse.Namespace):
                                                         batch_size=mb_size)
         if cuda:
             source, attn_masks, target, mask = source.cuda(), attn_masks.cuda(), target.cuda(), mask.cuda()
-        instances_seen += source.size(0)
+        tokens_seen += (source != pad_token).sum()
 
         logits = model(source, attn_masks)
 
@@ -117,7 +118,7 @@ def train(args: argparse.Namespace):
             wandb.log({
                 'loss': bloss,
                 'lr': scheduler.get_last_lr()[0],
-                'tokens': instances_seen * args.context,
+                'tokens': tokens_seen,
             }, commit=False, step=i)
             batch_loss = 0.
 
