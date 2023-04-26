@@ -106,7 +106,7 @@ def parse_args() -> Namespace:
                         type=int, default=None)
     parser.add_argument('--model-type', dest='model_type', default=None, type=str)
     parser.add_argument('--resume-run', dest='resume_run', default=None, type=str)
-    parser.add_argument('--save-last', dest='save_last_only', action='save_true', type=bool, default=False)
+    parser.add_argument('--save-last', dest='save_last_only', action='store_true', type=bool, default=False)
     options = parser.parse_args()
     return options
 
