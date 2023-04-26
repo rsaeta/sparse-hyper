@@ -231,6 +231,7 @@ def get_resume_args(args):
         new_args.__dict__.update(save_dir=next_path)
     if latest_model_checkpoint is not None:
         new_args.__dict__.update(load_model=latest_model_checkpoint)
+    new_args.__dict__.update(save_last_only=args.save_last_only)
     return new_args
 
 
