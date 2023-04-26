@@ -3,7 +3,7 @@ import os
 import argparse
 import re
 from typing import Optional
-
+from pathlib import Path
 import git
 import tokenizers
 
@@ -220,7 +220,8 @@ def get_resume_args(args):
         def_args = json.load(f)
     new_args.__dict__.update(**def_args)
     if args.save_dir is None:  # remap savedir
-        match = re.match('(.*)(\d+)', new_args.save_dir)
+        save_dir = Path(new_args.save_dir)
+        match = re.match(r'(.*)(\d+)$', save_dir.parts[-1])
         if match is not None:
             next_i = int(match[2]) + 1
             next_path = f'{match[1]}{next_i}'
