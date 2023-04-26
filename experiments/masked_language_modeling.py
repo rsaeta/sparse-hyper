@@ -163,7 +163,7 @@ def train(args: argparse.Namespace):
                     attention_viz(m, s, (context, context),
                                   save_file=f'{args.save_dir}/{n_validated // args.save_every}_attention_{layer}.pdf')
             if n_validated % args.save_every == 0:
-                f_name = f'{args.save_dir}/checkpoint_{n_validated // args.save_every}_'
+                f_name = f'{args.save_dir}/' if args.save_last_only else f'{args.save_dir}/checkpoint_{n_validated // args.save_every}_'
                 torch.save(model.state_dict(), f_name + 'model.pt')
                 torch.save(optimizer.state_dict(), f_name + 'optimizer.pt')
                 torch.save(scheduler.state_dict(), f_name + 'scheduler.pt')
@@ -207,6 +207,8 @@ def find_latest_model(path: str) -> Optional[str]:
     checkpoint = os.path.join(path, f'checkpoint_{max_checkpoint}_model.pt')
     if os.path.exists(checkpoint):
         return checkpoint
+    if os.path.exists(os.path.join(path, 'model.pt')):
+        return os.path.join(path, 'model.pt')
     return None
 
 

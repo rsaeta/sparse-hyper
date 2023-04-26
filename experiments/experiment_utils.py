@@ -106,6 +106,7 @@ def parse_args() -> Namespace:
                         type=int, default=None)
     parser.add_argument('--model-type', dest='model_type', default=None, type=str)
     parser.add_argument('--resume-run', dest='resume_run', default=None, type=str)
+    parser.add_argument('--save-last', dest='save_last_only', action='save_true', type=bool, default=False)
     options = parser.parse_args()
     return options
 
@@ -149,8 +150,6 @@ def get_model(args: Namespace, vocab_size: int, mask: bool = False) -> Generatin
         model.load_state_dict(state_dict)
     if cuda:
         model = model.cuda()
-    # if compile is not None:
-    #    model = compile(model)
     return model
 
 
@@ -253,6 +252,9 @@ class ByteTokenizer:
             attentions += [0] * num_pad
         encs = ByteEncoding(ids, attentions)
         return encs
+
+    def __call__(self, *args, **kwargs):
+        return self.encode(*args)
 
 
 def get_tokenizer(args: Namespace) -> tokenizers.Tokenizer:
