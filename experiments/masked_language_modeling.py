@@ -239,7 +239,6 @@ def main():
     args = parse_args()
     if args.resume_run is not None:
         args = get_resume_args(args)
-    breakpoint()
     print(args)
     init_wandb(args)
     try:
