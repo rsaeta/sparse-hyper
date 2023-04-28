@@ -245,7 +245,7 @@ def get_resume_args(args):
             next_path = f'{match[1]}{next_i}'
         else:
             next_i = 2
-            next_path = f'{save_dir}{next_i}'
+            next_path = f'{save_dir.parts[-1]}{next_i}'
         full_path = os.path.join(*save_dir.parts[:-1], next_path)
         new_args.__dict__.update(save_dir=full_path)
     if latest_model_checkpoint is not None:
@@ -268,6 +268,11 @@ def main():
     finally:
         wandb.finish()
 
+def derp():
+    args = argparse.Namespace()
+    args.__dict__.update(resume_run='/home/rsaeta/sparse-hyper/dabirds3', save_last_only=True, save_dir=None)
+    new_args = get_resume_args(args)
+    print(new_args)
 
 if __name__ == '__main__':
     main()
