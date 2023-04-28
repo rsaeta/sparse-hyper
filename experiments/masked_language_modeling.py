@@ -220,14 +220,14 @@ def get_resume_args(args):
         def_args = json.load(f)
     new_args.__dict__.update(**def_args)
     if args.save_dir is None:  # remap savedir
-        save_dir = Path(new_args.save_dir)
+        save_dir = Path(new_args.save_dir).absolute()
         match = re.match(r'(.*)(\d+)$', save_dir.parts[-1])
         if match is not None:
             next_i = int(match[2]) + 1
             next_path = f'{match[1]}{next_i}'
         else:
             next_i = 2
-            next_path = f'{new_args.save_dir}{next_i}'
+            next_path = f'{save_dir}{next_i}'
         new_args.__dict__.update(save_dir=next_path)
     if latest_model_checkpoint is not None:
         new_args.__dict__.update(load_model=latest_model_checkpoint)
