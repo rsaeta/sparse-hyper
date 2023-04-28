@@ -43,7 +43,7 @@ def init_wandb(args):
     )
 
 
-def sample_batch(data, tokenizer, length, batch_size, min_length, mask_p=0.15):
+def sample_batch(data, tokenizer, length, batch_size, min_length, target_len, mask_p=0.15):
     """
     Takes the data (a single sequence of tokens) and slices out a batch of subsequences to provide as input to the model
     while also randomly masking a single entry in the sequence to the mask_token provided.
@@ -56,23 +56,40 @@ def sample_batch(data, tokenizer, length, batch_size, min_length, mask_p=0.15):
     :return: A pair (input, target) of minteger matrices representing the input and target for the model.
     """
     mask_token = tokenizer.token_to_id('[MASK]')
+    pad_token = tokenizer.token_to_id('[PAD]')
+    sep_token = tokenizer.token_to_id('[SEP]')
     byte_len = 10 * length
 
+    max_frag_len = (length // 2) - 1
+
     # Sample the starting indices of the sequences to slice out.
-    starts = torch.randint(size=(batch_size,), low=0, high=data.size(0) - byte_len)
-    lens = torch.randint(size=(batch_size,), low=min_length, high=length)
+    starts = torch.randint(size=(batch_size, 2), low=0, high=data.size(0) - byte_len)
+    lens = torch.randint(size=(batch_size, 2), low=min_length, high=max_frag_len)
 
     # Slice out the input sequences
-    strs = [ttos(data[start:start + byte_len]) for start in starts]
+    strs = [[ttos(data[startA:startA + byte_len]), ttos(data[startB:startB + byte_len])] for (startA, startB) in starts]
+
     attention_masks = []
     encoded_ids = []
-    for s, l in zip(strs, lens):
-        encoded = tokenizer.encode(s[:int(l * 4)])
-        encoded_ids.append(encoded.ids[0:length])
-        attention_masks.append(encoded.attention_mask[0:length])
+    for (s1, s2), (l1, l2) in zip(strs, lens):
+        encoded1 = tokenizer.encode(s1)
+        encoded2 = tokenizer.encode(s2)
+        num_pad1 = max_frag_len - l1
+        num_pad2 = max_frag_len - l2
+        encoded = [*encoded1.ids[0:l1],
+                   *([pad_token] * num_pad1),
+                   sep_token,
+                   *encoded2.ids[0:l2],
+                   *([pad_token] * num_pad2)]
+        encoded = [*encoded, *([0]*(target_len-len(encoded)))]
+        encoded_ids.append(encoded)
+        attention_mask = [*([1]*l1), *([0]*num_pad1), 1, *([1]*l2), *([0]*num_pad2)]
+        attention_mask = [*attention_mask, *([0]*(target_len - len(attention_mask)))]
+        attention_masks.append(attention_mask)
     seqs_inputs = torch.tensor(encoded_ids)
     attention_masks = torch.tensor(attention_masks).bool()
     mask = torch.logical_and((torch.rand(seqs_inputs.size()) < mask_p), attention_masks)
+    mask = torch.logical_and(mask, ~(seqs_inputs == sep_token))
     targets = seqs_inputs.detach().clone()
     seqs_inputs.masked_fill_(mask, mask_token)
     if cuda:
@@ -86,7 +103,6 @@ def train(args: argparse.Namespace):
     setup(args)
     tokenizer = get_tokenizer(args)
     vocab_size = tokenizer.get_vocab_size()
-    pad_token = tokenizer.token_to_id('[PAD]')
     model = get_model(args, vocab_size=vocab_size, mask=False)
     optimizer, scheduler = learners(model, args)
     tokens_seen = 0
@@ -109,7 +125,8 @@ def train(args: argparse.Namespace):
                                                         tokenizer,
                                                         length=args.context,
                                                         batch_size=mb_size,
-                                                        min_length=args.context // 2)
+                                                        target_len=args.context,
+                                                        min_length=args.context // 3)
         if cuda:
             source, attn_masks, target, mask = source.cuda(), attn_masks.cuda(), target.cuda(), mask.cuda()
 
@@ -140,7 +157,8 @@ def train(args: argparse.Namespace):
                                                             tokenizer,
                                                             length=args.context,
                                                             batch_size=mb_size,
-                                                            min_length=args.context // 2)
+                                                            target_len=args.context,
+                                                            min_length=args.context // 3)
             if cuda:
                 source, attn_masks, target, mask = source.cuda(), attn_masks.cuda(), target.cuda(), mask.cuda()
             logits = model(source, attn_masks)
