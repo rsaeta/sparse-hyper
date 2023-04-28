@@ -463,7 +463,7 @@ class Head(nn.Module):
         self.mask = mask
         self.dropout = nn.Dropout(dropout)
 
-    def forward(self, x):
+    def forward(self, x: Tensor, attention_mask: Tensor):
         # input of size (batch, time-step, channels)
         # output of size (batch, time-step, head size)
         B,T,C = x.shape
@@ -471,8 +471,7 @@ class Head(nn.Module):
         q = self.query(x) # (B,T,hs)
         # compute attention scores ("affinities")
         wei = q @ k.transpose(-2,-1) * k.shape[-1]**-0.5 # (B, T, hs) @ (B, hs, T) -> (B, T, T)
-        if self.mask:
-            wei = wei.masked_fill(self.tril[:T, :T] == 0, float('-inf')) # (B, T, T)
+        wei = wei.masked_fill(~attention_mask, float('-inf'))  # (B, T, T)
         wei = torch.nn.functional.softmax(wei, dim=-1) # (B, T, T)
         wei = self.dropout(wei)
         # perform the weighted aggregation of the values
@@ -490,8 +489,8 @@ class MultiHeadAttention(nn.Module):
         self.proj = nn.Linear(head_size * num_heads, n_embd)
         self.dropout = nn.Dropout(dropout)
 
-    def forward(self, x):
-        out = torch.cat([h(x) for h in self.heads], dim=-1)
+    def forward(self, x: Tensor, attention_mask: Tensor):
+        out = torch.cat([h(x, attention_mask) for h in self.heads], dim=-1)
         out = self.dropout(self.proj(out))
         return out
 
