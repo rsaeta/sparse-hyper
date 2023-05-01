@@ -103,6 +103,7 @@ class SmallerBirdSparseAttention(SparseSelfAttention):
     def hyper_to_weights(self, x, means, sigmas, values):
         batch, context, emb = x.size()  # (B, C, E)
         rank = means.size(-1)
+        breakpoint()
         indices: Tensor = sparse.ngenerate(means,
                                            self.gadditional,
                                            self.nadditional,
@@ -116,7 +117,8 @@ class SmallerBirdSparseAttention(SparseSelfAttention):
         indices_fl = indices.float()
         # For each point (self.k), we expect to sample the 2**rank closest points from the first set of sampling,
         # then self.gadditional globally-sampled indices, and self.nadditional neighborhood-sampled indices.
-        num_points = self.k * (2 ** rank + self.gadditional + self.nadditional)
+        n_add =  (2 ** rank + self.gadditional + self.nadditional) if self.train else 1
+        num_points = self.k * n_add
         assert indices.size() == (batch, context, num_points, 1), f'Expected size {(batch, context, num_points, 1)}. ' \
                                                                   f'Got {indices.size()}'
         densities = sparse.densities(indices_fl, means, sigmas).clone()  # (B, C, P, self.k)
