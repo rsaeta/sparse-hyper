@@ -710,7 +710,7 @@ def generate_integer_tuples(means, gadditional, ladditional, rng=None, relative_
     return all.view(b, k, -1, rank) # combine all indices sampled within a chunk
 
 
-def ngenerate(means, gadditional, ladditional, rng=None, relative_range=None, seed=None, cuda=False, fm=None, epsilon=EPSILON):
+def ngenerate(means, gadditional, ladditional, rng=None, relative_range=None, seed=None, cuda=False, fm=None, epsilon=EPSILON, train=True):
     """
 
     Generates random integer index tuples based on continuous parameters.
@@ -719,6 +719,9 @@ def ngenerate(means, gadditional, ladditional, rng=None, relative_range=None, se
       in some cases epsilon needs to be relatively big (e.g. 10-5)
 
     """
+    if not train:
+        indices = means.round().long().view(-1, 1)
+        return indices
 
     b = means.size(0)
     k, c, rank = means.size()[-3:]

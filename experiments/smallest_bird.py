@@ -33,7 +33,6 @@ class SmallerBirdConfig:
 
 
 def create_masks_for_block_sparse_attn(attention_mask: torch.Tensor, block_size: int):
-
     batch_size, seq_length = attention_mask.size()
     assert (
         seq_length % block_size == 0
@@ -109,7 +108,8 @@ class SmallerBirdSparseAttention(SparseSelfAttention):
                                            self.nadditional,
                                            rng=(context,),
                                            relative_range=(2,),
-                                           cuda='cuda' in util.d(x))  # (B, C, P, 1)
+                                           cuda='cuda' in util.d(x),
+                                           train=self.train)  # (B, C, P, 1)
         assert ((indices < 0).sum().item() == 0) and ((indices >= context).sum().item() == 0), \
             f'Found some indices out of bounds: indices < 0: {(indices < 0).sum().item()}; ' \
             f'indices >= {context}: {(indices >= context).sum().item()}'
@@ -165,10 +165,9 @@ class SmallerBirdSparseAttention(SparseSelfAttention):
         from_blocked_mask=None,
         to_blocked_mask=None,
     ):
-
         # Useless arguments: `attention_mask`, `head_mask`, `encoder_hidden_states`, `encoder_attention_mask`, `past_key_value`
         # Currently this `class` can't be used in decoder.
-
+        attention_mask = (attention_mask[:,0,:]).long()
         batch_size, seqlen, _ = hidden_states.size()
         to_seq_length = from_seq_length = seqlen
         from_block_size = to_block_size = self.block_size
@@ -186,7 +185,7 @@ class SmallerBirdSparseAttention(SparseSelfAttention):
         indreshape = indices.squeeze().reshape(hidden_states.size(0), self.n_heads, hidden_states.size(1), -1)[:,:,1:-1,:]
         weightsreshape = weights.reshape(hidden_states.size(0), self.n_heads, hidden_states.size(1), -1)
 
-        blocked_encoder_mask, band_mask, from_mask, to_mask = create_masks_for_block_sparse_attn(torch.ones(batch_size, seqlen, device=query_layer.device), 1)
+        blocked_encoder_mask, band_mask, from_mask, to_mask = create_masks_for_block_sparse_attn(attention_mask, 1)
         context_layer, attention_probs = self.bigbird_block_sparse_attention(
             query_layer,
             key_layer,
