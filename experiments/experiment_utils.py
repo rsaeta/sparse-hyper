@@ -1,8 +1,14 @@
+import argparse
 import os
 import json
+import re
+from pathlib import Path
 
 import tokenizers
 import torch
+
+from mlm_components import ByteTokenizer
+
 try:
     import torch._dynamo
     supports_dyno = True
@@ -12,12 +18,10 @@ from functools import partial
 
 from transformer_models import GeneratingTransformer
 from argparse import Namespace, ArgumentParser
-import gzip
-import numpy as np
 from tokenizers import BertWordPieceTokenizer
 
 try:
-    from typing import get_args
+    from typing import get_args, Optional
 except ImportError:
     from typing_extensions import get_args
 
@@ -153,26 +157,6 @@ def get_model(args: Namespace, vocab_size: int, mask: bool = False) -> Generatin
     return model
 
 
-def enwik8(path, n_train=int(90e6), n_valid=int(5e6), n_test=int(5e6)):
-    """
-    Load the enwik8 dataset from the Hutter challenge.
-    Adapted from https://github.com/openai/blocksparse/blob/master/examples/transformer/enwik8.py
-    :param path:
-    :param n_train:
-    :param n_valid:
-    :param n_test:
-    :return:
-    """
-    file_stats = os.stat(path)
-    size = file_stats.st_size
-    n_train = int(size*.9)
-    n_valid = n_test = int(size*.05)
-    with gzip.open(path) if path.endswith('.gz') else open(path) as file:
-        X = np.fromstring(file.read(n_train + n_valid + n_test), dtype=np.uint8)
-        trX, vaX, teX = np.split(X, [n_train, n_train + n_valid])
-        return torch.from_numpy(trX), torch.from_numpy(vaX), torch.from_numpy(teX)
-
-
 def lr(args, i):
     if i < args.lr_warmup:
         next_lr = (i+1)/args.lr_warmup
@@ -204,59 +188,6 @@ def learners(model, args, load=True):
     return optimizer, scheduler
 
 
-class ByteEncoding:
-
-    def __init__(self, ids, masks):
-        self.ids = ids
-        self.attention_mask = masks
-
-
-class ByteTokenizer:
-
-    def __init__(self):
-        self.min_token = 20e10
-        self.max_token = 20e10
-        self.mask_token = 20e10
-        self.pad_token = 20e10
-        self.max_len = -1
-
-    def train(self, datas, **kwargs):
-        chrs = set()
-        for d in datas:
-            text, val, test = enwik8(d)
-            chrs = chrs.union(text.unique())
-        self.min_token = min(chrs).item()
-        self.max_token = max(chrs).item()
-        self.mask_token = self.max_token+1
-        self.pad_token = self.mask_token+1
-
-    def get_vocab_size(self, with_added_tokens=True):
-        return self.mask_token+2 if with_added_tokens else self.mask_token
-
-    def token_to_id(self, token):
-        if token == '[MASK]':
-            return self.mask_token
-        elif token == '[PAD]':
-            return self.pad_token
-        return self.encode(token).ids
-
-    def enable_padding(self, *, length):
-        self.max_len = length
-
-    def encode(self, s):
-        ids = list(map(ord, s))
-        attentions = [1]*len(ids)
-        if self.max_len > 0:
-            num_pad = self.max_len - len(ids)
-            ids += [self.pad_token] * num_pad
-            attentions += [0] * num_pad
-        encs = ByteEncoding(ids, attentions)
-        return encs
-
-    def __call__(self, *args, **kwargs):
-        return self.encode(*args)
-
-
 def get_tokenizer(args: Namespace) -> tokenizers.Tokenizer:
     if args.tokenizer == 'wordpiece':
         tokenizer_cls = BertWordPieceTokenizer
@@ -282,3 +213,46 @@ def setup(args: Namespace):
         os.mkdir(save_dir)
     with open(os.path.join(save_dir, 'config.json'), 'w') as f:
         json.dump(vars(args), f)
+
+
+def find_latest_model(path: str) -> Optional[str]:
+    """Finds the latest model saved in path."""
+    files = os.listdir(path)
+    max_checkpoint = -1
+    for f in files:
+        match = re.match('.*/?checkpoint_(\d+)_model.pt', f)
+        if match is not None:
+            if int(match[1]) > max_checkpoint:
+                max_checkpoint = int(match[1])
+    checkpoint = os.path.join(path, f'checkpoint_{max_checkpoint}_model.pt')
+    if os.path.exists(checkpoint):
+        return checkpoint
+    if os.path.exists(os.path.join(path, 'model.pt')):
+        return os.path.join(path, 'model.pt')
+    return None
+
+
+def get_resume_args(args):
+    config_fname = os.path.join(args.resume_run, 'config.json')
+    latest_model_checkpoint = find_latest_model(args.resume_run)
+    new_args = argparse.Namespace()
+    with open(config_fname) as f:
+        def_args = json.load(f)
+    new_args.__dict__.update(**def_args)
+    if args.save_dir is None:  # remap savedir
+        save_dir = Path(new_args.save_dir).absolute()
+        match = re.match(r'(.*)(\d+)$', save_dir.parts[-1])
+        if match is not None:
+            next_i = int(match[2]) + 1
+            next_path = f'{match[1]}{next_i}'
+        else:
+            next_i = 2
+            next_path = f'{save_dir.parts[-1]}{next_i}'
+        full_path = os.path.join(*save_dir.parts[:-1], next_path)
+        new_args.__dict__.update(save_dir=full_path)
+    if latest_model_checkpoint is not None:
+        new_args.__dict__.update(load_model=latest_model_checkpoint)
+    if args.interact:
+        new_args.__dict__.update(interact=True)
+    new_args.__dict__.update(save_last_only=args.save_last_only)
+    return new_args
