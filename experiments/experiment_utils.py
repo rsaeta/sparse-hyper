@@ -116,6 +116,11 @@ def parse_args() -> Namespace:
 
 
 def get_model(args: Namespace, vocab_size: int, mask: bool = False) -> GeneratingTransformer:
+    if args.load_model is not None:
+        # make it an absolute path
+        args.resume_run = os.path.dirname(args.load_model)
+        model_args = get_resume_args(args)
+        args = model_args
     if args.model_type is None:
         attentions = None
     elif args.model_type == 'dabirds':

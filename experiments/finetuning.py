@@ -73,11 +73,10 @@ class GLUETuned(nn.Module):
     def __init__(self, model, classes=None):
         super().__init__()
         self.model = model
-        context = model.pos_embedding.num_embeddings
         self.classification = False
         if classes is not None:
             self.classification = True
-            lin = nn.Linear(context*model.t_blocks[-1].ff[-1].out_features, classes, device=device)
+            lin = nn.Linear(model.t_blocks[-1].ff[-1].out_features, classes, device=device)
             if classes == 1:
                 self.final = nn.Sequential(lin, nn.Sigmoid())
             else:
@@ -85,15 +84,18 @@ class GLUETuned(nn.Module):
         else:
             self.final = None
 
-    def forward(self, input_ids: Tensor, attention_mask: Tensor, token_type_ids: Tensor, labels: Tensor) -> GlueOutput:
+    def forward(self, input_ids: Tensor, *, attention_mask: Tensor, labels: Tensor = None) -> GlueOutput:
         b, c = input_ids.shape
         embedded = self.model.embed(input_ids)
         logits = self.model.t_blocks(embedded, attention_mask)
         if self.final is not None:
             if self.classification:
-                logits = logits.view(b, -1)  # Collapse embedded sentence to single dimension per item in batch
+                logits = logits[:, 0, :]  # take the first token of the sequence as the pooled output ([CLS])
             logits = self.final(logits)
-        loss = F.binary_cross_entropy(logits, labels)
+        if labels is not None:
+            loss = F.binary_cross_entropy(logits.squeeze(), labels.float())
+        else:
+            loss = None
         return GlueOutput(loss, logits)
 
 
@@ -179,7 +181,8 @@ def tokenizer_fn(tokenizer):
             return tokenizer(example['sentence'], padding='max_length', truncation=True, return_tensors="pt")
         except:
             derp = thing(example['sentence'], lambda t, padding: tokenizer.encode(t))
-            return derp
+            seq_ids, attn_masks = derp
+            return {'input_ids': seq_ids, 'attention_mask': attn_masks}
     return fn
 
 
@@ -194,9 +197,9 @@ def train_cola(model, tokenizer, train, val):
     train, val = train.rename_column('label', 'labels'), val.rename_column('label', 'labels')
 
     optimizer = AdamW(model.parameters(), lr=5e-5)
-    train_dl = DataLoader(train.shuffle().select(range(1000)), batch_size=10)
-    val_dl = DataLoader(val.shuffle().select(range(1000)), batch_size=10)
-    for n in range(10):
+    train_dl = DataLoader(train.shuffle())
+    val_dl = DataLoader(val.shuffle())
+    for n in range(5):
         model.train()
         for i, batch in enumerate(train_dl):
             batch = {k: v.to(device) for k, v in batch.items()}
@@ -214,7 +217,10 @@ def train_cola(model, tokenizer, train, val):
             with torch.no_grad():
                 outputs = model(**batch)
             logits = outputs.logits
-            predictions = torch.argmax(logits, dim=-1)
+            if logits.size(-1) > 1:
+                predictions = torch.argmax(logits, dim=-1)
+            else:
+                predictions = torch.round(logits)
             metric.add_batch(predictions=predictions, references=batch['labels'])
         print(metric.compute())
 
@@ -229,15 +235,16 @@ def main_bert():
 
 
 def mainish(args):
-    breakpoint()
     ds = load_cola_dataset(None)
     train, val = ds['train'], ds['validation']
     tokenizer = utils.get_tokenizer(args)
     model = utils.get_model(args, tokenizer.get_vocab_size())
+    model = GLUETuned(model, classes=1)
     train_cola(model, tokenizer, train, val)
 
 
 def main(args):
+    breakpoint()
     path = 'data/glue/cola_public/raw/in_domain_dev.tsv'
     text, labels = load_cola_dataset(path)
     model, tokenizer = get_berts()
@@ -251,6 +258,6 @@ def main(args):
 
 
 if __name__ == '__main__':
-    # main_bert()
+    main_bert()
     # main(utils.parse_args())
-    mainish(utils.parse_args())
+    # mainish(utils.parse_args())
