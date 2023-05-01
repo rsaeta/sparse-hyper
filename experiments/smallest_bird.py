@@ -341,23 +341,15 @@ class SmallerBirdSparseAttention(SparseSelfAttention):
         first_context_layer = self.torch_bmm_nd(first_attn_weights, value_layer, ndim=4)
         first_context_layer.unsqueeze_(2)
 
-        # q[1] x (sliding_keys, random_keys, global_keys)
+        # q[1] x (adaptive_keys)
         second_key_mat = torch.cat(
             [
-                # blocked_key_matrix[:, :, 0],
-                # blocked_key_matrix[:, :, 1],
-                # blocked_key_matrix[:, :, 2],
-                # blocked_key_matrix[:, :, -1],
                 gathered_key[:, :, 0],
             ],
             dim=2,
         )  # [b, h, (4+r)*wn, -1]
         second_value_mat = torch.cat(
             [
-                # blocked_value_matrix[:, :, 0],
-                # blocked_value_matrix[:, :, 1],
-                # blocked_value_matrix[:, :, 2],
-                # blocked_value_matrix[:, :, -1],
                 gathered_value[:, :, 0],
             ],
             dim=2,
