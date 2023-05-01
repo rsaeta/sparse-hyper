@@ -91,7 +91,7 @@ def train(args: argparse.Namespace):
             optimizer.zero_grad()
 
         if i % args.validation_every == 0 and i > 0:
-            model.train(False)
+            model.eval()
             source, attn_masks, target, mask = sample_batch(data_test,
                                                             tokenizer,
                                                             length=args.context,
@@ -137,7 +137,7 @@ def interact(args):
                                                     min_length=args.context // 2 - 5)
     if cuda:
         source, attn_masks, target, mask = source.cuda(), attn_masks.cuda(), target.cuda(), mask.cuda()
-    breakpoint()
+
     logits = model(source, attn_masks)
     output = F.log_softmax(logits, dim=-1)
     preds = torch.argmax(output, dim=-1)
