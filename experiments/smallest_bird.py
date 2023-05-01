@@ -33,7 +33,6 @@ class SmallerBirdConfig:
 
 
 def create_masks_for_block_sparse_attn(attention_mask: torch.Tensor, block_size: int):
-
     batch_size, seq_length = attention_mask.size()
     assert (
         seq_length % block_size == 0
@@ -109,14 +108,16 @@ class SmallerBirdSparseAttention(SparseSelfAttention):
                                            self.nadditional,
                                            rng=(context,),
                                            relative_range=(2,),
-                                           cuda='cuda' in util.d(x))  # (B, C, P, 1)
+                                           cuda='cuda' in util.d(x),
+                                           train=self.training)  # (B, C, P, 1)
         assert ((indices < 0).sum().item() == 0) and ((indices >= context).sum().item() == 0), \
             f'Found some indices out of bounds: indices < 0: {(indices < 0).sum().item()}; ' \
             f'indices >= {context}: {(indices >= context).sum().item()}'
         indices_fl = indices.float()
         # For each point (self.k), we expect to sample the 2**rank closest points from the first set of sampling,
         # then self.gadditional globally-sampled indices, and self.nadditional neighborhood-sampled indices.
-        num_points = self.k * (2 ** rank + self.gadditional + self.nadditional)
+        n_add =  (2 ** rank + self.gadditional + self.nadditional) if self.training else 1
+        num_points = self.k * n_add
         assert indices.size() == (batch, context, num_points, 1), f'Expected size {(batch, context, num_points, 1)}. ' \
                                                                   f'Got {indices.size()}'
         densities = sparse.densities(indices_fl, means, sigmas).clone()  # (B, C, P, self.k)
@@ -165,10 +166,9 @@ class SmallerBirdSparseAttention(SparseSelfAttention):
         from_blocked_mask=None,
         to_blocked_mask=None,
     ):
-
         # Useless arguments: `attention_mask`, `head_mask`, `encoder_hidden_states`, `encoder_attention_mask`, `past_key_value`
         # Currently this `class` can't be used in decoder.
-
+        attention_mask = (attention_mask[:,0,:]).long()
         batch_size, seqlen, _ = hidden_states.size()
         to_seq_length = from_seq_length = seqlen
         from_block_size = to_block_size = self.block_size
@@ -186,7 +186,7 @@ class SmallerBirdSparseAttention(SparseSelfAttention):
         indreshape = indices.squeeze().reshape(hidden_states.size(0), self.n_heads, hidden_states.size(1), -1)[:,:,1:-1,:]
         weightsreshape = weights.reshape(hidden_states.size(0), self.n_heads, hidden_states.size(1), -1)
 
-        blocked_encoder_mask, band_mask, from_mask, to_mask = create_masks_for_block_sparse_attn(torch.ones(batch_size, seqlen, device=query_layer.device), 1)
+        blocked_encoder_mask, band_mask, from_mask, to_mask = create_masks_for_block_sparse_attn(attention_mask, 1)
         context_layer, attention_probs = self.bigbird_block_sparse_attention(
             query_layer,
             key_layer,
@@ -340,23 +340,15 @@ class SmallerBirdSparseAttention(SparseSelfAttention):
         first_context_layer = self.torch_bmm_nd(first_attn_weights, value_layer, ndim=4)
         first_context_layer.unsqueeze_(2)
 
-        # q[1] x (sliding_keys, random_keys, global_keys)
+        # q[1] x (adaptive_keys)
         second_key_mat = torch.cat(
             [
-                # blocked_key_matrix[:, :, 0],
-                # blocked_key_matrix[:, :, 1],
-                # blocked_key_matrix[:, :, 2],
-                # blocked_key_matrix[:, :, -1],
                 gathered_key[:, :, 0],
             ],
             dim=2,
         )  # [b, h, (4+r)*wn, -1]
         second_value_mat = torch.cat(
             [
-                # blocked_value_matrix[:, :, 0],
-                # blocked_value_matrix[:, :, 1],
-                # blocked_value_matrix[:, :, 2],
-                # blocked_value_matrix[:, :, -1],
                 gathered_value[:, :, 0],
             ],
             dim=2,

@@ -109,7 +109,8 @@ class SmallBirdSparseAttention(SparseSelfAttention):
                                            self.nadditional,
                                            rng=(context,),
                                            relative_range=(2,),
-                                           cuda='cuda' in util.d(x))  # (B, C, P, 1)
+                                           cuda='cuda' in util.d(x),
+                                           train=self.training)  # (B, C, P, 1)
         assert ((indices < 0).sum().item() == 0) and ((indices >= context).sum().item() == 0), \
             f'Found some indices out of bounds: indices < 0: {(indices < 0).sum().item()}; ' \
             f'indices >= {context}: {(indices >= context).sum().item()}'

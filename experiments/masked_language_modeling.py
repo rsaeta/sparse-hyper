@@ -1,27 +1,23 @@
-import json
 import os
 import argparse
-import re
-from typing import Optional
-from pathlib import Path
 import git
-import tokenizers
 
 from experiment_utils import (
     parse_args,
     get_model,
     learners,
     setup,
-    enwik8,
     get_tokenizer,
 )
+from mlm_components import enwik8
 
 import torch
 import torch.nn.functional as F
 
 import wandb
 
-from experiments.experiment_utils import cuda
+from experiment_utils import cuda, get_resume_args
+from mlm_utils import sample_batch, ttos
 from plot_utils import attention_viz
 
 
@@ -41,62 +37,6 @@ def init_wandb(args):
             'model_type': args.model_type,
         }
     )
-
-
-def sample_batch(data, tokenizer, length, batch_size, min_length, target_len, mask_p=0.15):
-    """
-    Takes the data (a single sequence of tokens) and slices out a batch of subsequences to provide as input to the model
-    while also randomly masking a single entry in the sequence to the mask_token provided.
-    :param data: The (training) data. A single vector of tokens represented by integers
-    :param length: The length of the subsequences in the batch.
-    :param batch_size: The number of subsequences in the batch
-    :param tokenizer: The tokenizer that is used to parse the texts
-    :param min_length: the min length of sequences to train on variable-length documents
-    :param mask_p: The probability of masking a token
-    :return: A pair (input, target) of minteger matrices representing the input and target for the model.
-    """
-    mask_token = tokenizer.token_to_id('[MASK]')
-    pad_token = tokenizer.token_to_id('[PAD]')
-    sep_token = tokenizer.token_to_id('[SEP]')
-    byte_len = 10 * length
-
-    max_frag_len = (length // 2) - 1
-
-    # Sample the starting indices of the sequences to slice out.
-    starts = torch.randint(size=(batch_size, 2), low=0, high=data.size(0) - byte_len)
-    lens = torch.randint(size=(batch_size, 2), low=min_length, high=max_frag_len)
-
-    # Slice out the input sequences
-    strs = [[ttos(data[startA:startA + byte_len]), ttos(data[startB:startB + byte_len])] for (startA, startB) in starts]
-
-    attention_masks = []
-    encoded_ids = []
-    for (s1, s2), (l1, l2) in zip(strs, lens):
-        encoded1 = tokenizer.encode(s1)
-        encoded2 = tokenizer.encode(s2)
-        num_pad1 = max_frag_len - l1
-        num_pad2 = max_frag_len - l2
-        encoded = [*encoded1.ids[0:l1],
-                   *([pad_token] * num_pad1),
-                   sep_token,
-                   *encoded2.ids[0:l2],
-                   *([pad_token] * num_pad2)]
-        encoded = [*encoded, *([0]*(target_len-len(encoded)))]
-        encoded_ids.append(encoded)
-        attention_mask = [*([1]*l1), *([0]*num_pad1), 1, *([1]*l2), *([0]*num_pad2)]
-        attention_mask = [*attention_mask, *([0]*(target_len - len(attention_mask)))]
-        attention_masks.append(attention_mask)
-    seqs_inputs = torch.tensor(encoded_ids)
-    attention_masks = torch.tensor(attention_masks).bool()
-    mask = torch.logical_and((torch.rand(seqs_inputs.size()) < mask_p), attention_masks)
-    mask = torch.logical_and(mask, ~(seqs_inputs == sep_token))
-    targets = seqs_inputs.detach().clone()
-    seqs_inputs.masked_fill_(mask, mask_token)
-    if cuda:
-        seqs_inputs = seqs_inputs.cuda()
-    c = attention_masks.size(-1)
-    attention_masks = attention_masks[:, None, :].expand(-1, c, -1)
-    return seqs_inputs, attention_masks, targets, mask
 
 
 def train(args: argparse.Namespace):
@@ -125,7 +65,6 @@ def train(args: argparse.Namespace):
                                                         tokenizer,
                                                         length=args.context,
                                                         batch_size=mb_size,
-                                                        target_len=args.context,
                                                         min_length=args.context // 3)
         if cuda:
             source, attn_masks, target, mask = source.cuda(), attn_masks.cuda(), target.cuda(), mask.cuda()
@@ -152,12 +91,11 @@ def train(args: argparse.Namespace):
             optimizer.zero_grad()
 
         if i % args.validation_every == 0 and i > 0:
-            model.train(False)
+            model.eval()
             source, attn_masks, target, mask = sample_batch(data_test,
                                                             tokenizer,
                                                             length=args.context,
                                                             batch_size=mb_size,
-                                                            target_len=args.context,
                                                             min_length=args.context // 3)
             if cuda:
                 source, attn_masks, target, mask = source.cuda(), attn_masks.cuda(), target.cuda(), mask.cuda()
@@ -187,12 +125,6 @@ def train(args: argparse.Namespace):
                 torch.save(scheduler.state_dict(), f_name + 'scheduler.pt')
 
 
-def ttos(t: torch.Tensor, tokenizer: tokenizers.Tokenizer = None) -> str:
-    if tokenizer is None:
-        return ''.join(map(chr, t))
-    return tokenizer.decode(t)
-
-
 def interact(args):
     tokenizer = get_tokenizer(args)
     vocab_size = tokenizer.get_vocab_size()
@@ -201,57 +133,16 @@ def interact(args):
     source, attn_masks, target, mask = sample_batch(data_train,
                                                     tokenizer=tokenizer,
                                                     length=args.context,
-                                                    batch_size=args.batch_size,
-                                                    min_length=args.context // 2)
+                                                    batch_size=args.micro_batch_size,
+                                                    min_length=args.context // 2 - 5)
     if cuda:
-        source, target, mask = source.cuda(), target.cuda(), mask.cuda()
+        source, attn_masks, target, mask = source.cuda(), attn_masks.cuda(), target.cuda(), mask.cuda()
 
-    logits = model(source)
+    logits = model(source, attn_masks)
     output = F.log_softmax(logits, dim=-1)
     preds = torch.argmax(output, dim=-1)
     breakpoint()
     print('\n'.join(map(lambda t: ttos(t, tokenizer), [target[0], source[0], preds[0]])))
-
-
-def find_latest_model(path: str) -> Optional[str]:
-    """Finds the latest model saved in path"""
-    files = os.listdir(path)
-    max_checkpoint = -1
-    for f in files:
-        match = re.match('.*/?checkpoint_(\d+)_model.pt', f)
-        if match is not None:
-            if int(match[1]) > max_checkpoint:
-                max_checkpoint = int(match[1])
-    checkpoint = os.path.join(path, f'checkpoint_{max_checkpoint}_model.pt')
-    if os.path.exists(checkpoint):
-        return checkpoint
-    if os.path.exists(os.path.join(path, 'model.pt')):
-        return os.path.join(path, 'model.pt')
-    return None
-
-
-def get_resume_args(args):
-    config_fname = os.path.join(args.resume_run, 'config.json')
-    latest_model_checkpoint = find_latest_model(args.resume_run)
-    new_args = argparse.Namespace()
-    with open(config_fname) as f:
-        def_args = json.load(f)
-    new_args.__dict__.update(**def_args)
-    if args.save_dir is None:  # remap savedir
-        save_dir = Path(new_args.save_dir).absolute()
-        match = re.match(r'(.*)(\d+)$', save_dir.parts[-1])
-        if match is not None:
-            next_i = int(match[2]) + 1
-            next_path = f'{match[1]}{next_i}'
-        else:
-            next_i = 2
-            next_path = f'{save_dir.parts[-1]}{next_i}'
-        full_path = os.path.join(*save_dir.parts[:-1], next_path)
-        new_args.__dict__.update(save_dir=full_path)
-    if latest_model_checkpoint is not None:
-        new_args.__dict__.update(load_model=latest_model_checkpoint)
-    new_args.__dict__.update(save_last_only=args.save_last_only)
-    return new_args
 
 
 def main():
@@ -268,11 +159,13 @@ def main():
     finally:
         wandb.finish()
 
+
 def derp():
     args = argparse.Namespace()
     args.__dict__.update(resume_run='/home/rsaeta/sparse-hyper/dabirds3', save_last_only=True, save_dir=None)
     new_args = get_resume_args(args)
     print(new_args)
+
 
 if __name__ == '__main__':
     main()

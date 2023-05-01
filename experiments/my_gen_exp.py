@@ -1,5 +1,6 @@
 import argparse
-from experiment_utils import parse_args, get_model, cuda, enwik8, learners
+from experiment_utils import parse_args, get_model, cuda, learners
+from experiments.mlm_components import enwik8
 
 import torch
 import torch.nn.functional as F
