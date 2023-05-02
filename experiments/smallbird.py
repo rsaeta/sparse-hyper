@@ -117,7 +117,8 @@ class SmallBirdSparseAttention(SparseSelfAttention):
         indices_fl = indices.float()
         # For each point (self.k), we expect to sample the 2**rank closest points from the first set of sampling,
         # then self.gadditional globally-sampled indices, and self.nadditional neighborhood-sampled indices.
-        num_points = self.k * (2 ** rank + self.gadditional + self.nadditional)
+        n_add = 2 ** rank + self.gadditional + self.nadditional if self.training else 1
+        num_points = self.k * n_add
         assert indices.size() == (batch, context, num_points, 1), f'Expected size {(batch, context, num_points, 1)}. ' \
                                                                   f'Got {indices.size()}'
         densities = sparse.densities(indices_fl, means, sigmas).clone()  # (B, C, P, self.k)
