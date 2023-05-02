@@ -322,7 +322,7 @@ class SmallBirdSparseAttention(SparseSelfAttention):
         blocked_key_matrix = key_layer.view(b, h, n // wn, wn, -1)
         blocked_value_matrix = value_layer.view(b, h, n // wn, wn, -1)
 
-        # preparing block for randn attn
+        # preparing block for adaptive attn
         gathered_key = self.torch_gather_b2(blocked_key_matrix, adaptive_attn_inds)
         gathered_key = gathered_key.view(b, h, n // wn - 2, r * wn, -1)  # [b, h, n//wn-2, r, wn, -1]
         gathered_value = self.torch_gather_b2(blocked_value_matrix, adaptive_attn_inds)
