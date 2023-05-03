@@ -21,7 +21,7 @@ from argparse import Namespace, ArgumentParser
 from tokenizers import BertWordPieceTokenizer
 
 try:
-    from typing import get_args, Optional
+    from typing import get_args
 except ImportError:
     from typing_extensions import get_args
 
@@ -221,7 +221,7 @@ def setup(args: Namespace):
         json.dump(vars(args), f)
 
 
-def find_latest_model(path: str) -> Optional[str]:
+def find_latest_model(path: str) -> str:
     """Finds the latest model saved in path."""
     files = os.listdir(path)
     max_checkpoint = -1
