@@ -1,24 +1,20 @@
 import dataclasses
-import os
 
-import tokenizers.implementations
+from tqdm import tqdm
 import torch
-import transformers
 from datasets import load_dataset
 from torch import nn, Tensor
 from torch.nn import functional as F
 from torch.utils.data import Dataset, DataLoader
 import experiment_utils as utils
-import pandas as pd
 import evaluate
-from torch.optim import AdamW
-from transformers import BertModel, BertTokenizer
+from transformers import BertForSequenceClassification, BertTokenizer
 
 device = utils.device
 
 
 def get_berts():
-    bert = BertModel.from_pretrained("bert-base-uncased").to(device)
+    bert = BertForSequenceClassification.from_pretrained("bert-base-uncased").to(device)
     tokenizer = BertTokenizer.from_pretrained("bert-base-uncased", padding='max_length')
     return bert, tokenizer
 
@@ -29,10 +25,8 @@ class BertTuned(nn.Module):
         self.bert = bert
         self.dropout = nn.Dropout(0.2)
         self.classification = False
-        context = bert.embeddings.position_embeddings.weight.size(0)
         if classes is not None:
             self.classification = True
-            # lin = nn.Linear(context * bert.encoder.layer[-1].output.dense.out_features, classes, device=device)
             lin = nn.Linear(768, classes, device=device)
             if classes == 1:
                 self.final = nn.Sequential(lin, nn.Sigmoid())
@@ -42,21 +36,11 @@ class BertTuned(nn.Module):
             self.final = None
 
     def forward(self, x: torch.Tensor, attention_mask: torch.Tensor):
-        atm = attention_mask[:, None]
-        b = x.size(0)
         _, pooled_output = self.bert(input_ids=x, attention_mask=attention_mask, return_dict=False)
         dropout = self.dropout(pooled_output)
         lin = self.final(dropout)
         final_layer = F.relu(lin)
         return final_layer
-"""
-encoded = self.bert.embeddings(x)
-for layer in self.bert.encoder.layer:
-    encoded, = layer(encoded, atm)
-if self.final is not None:
-    return self.final(encoded.view(b, -1))
-return encoded
-"""
 
 
 @dataclasses.dataclass
@@ -70,15 +54,19 @@ class GLUETuned(nn.Module):
     Here we wrap our given model in another thing that fine-tunes the model
     end-to-end
     """
-    def __init__(self, model, classes=None):
+    def __init__(self, model, classes=None, activate=True, loss_fn=None):
         super().__init__()
         self.model = model
         self.classification = False
+        self.loss_fn = loss_fn
         if classes is not None:
             self.classification = True
             lin = nn.Linear(model.t_blocks[-1].ff[-1].out_features, classes, device=device)
             if classes == 1:
-                self.final = nn.Sequential(lin, nn.Sigmoid())
+                if activate:
+                    self.final = nn.Sequential(lin, nn.Sigmoid())
+                else:
+                    self.final = lin
             else:
                 self.final = lin
         else:
@@ -93,28 +81,42 @@ class GLUETuned(nn.Module):
                 logits = logits[:, 0, :]  # take the first token of the sequence as the pooled output ([CLS])
             logits = self.final(logits)
         if labels is not None:
-            loss = F.binary_cross_entropy(logits.squeeze(), labels.float())
+            loss = self.loss_fn(logits.squeeze(1), labels.float())
         else:
             loss = None
         return GlueOutput(loss, logits)
 
 
-def load_cola_dataset(path, sep='\t'):
-    """df = pd.read_csv(path, sep=sep, names=['id', 'label', 'author_label', 'text'])
-    return df.text, df.label"""
-    return load_dataset('glue', 'cola')
+def load_and_process(tokenizer, *args, batch_size=32, subset=1000):
+    """
+    Loads the dataset and does the label replacement for the GLUE datasets.
+    Returns a tuple of train and validation datasets.
+    """
+    dataset = load_dataset(*args)
+    valkey = 'validation_matched' if 'validation_matched' in dataset else 'validation'
+    train, val = dataset['train'], dataset[valkey]
+    if subset is not None:
+        subset = min(subset, len(train), len(val))
+        train = train.select(range(subset))
+        val = val.select(range(subset))
+    tokfn = tokenizer_fn(tokenizer)
 
+    train = train.map(tokfn, batched=True)
+    val = val.map(tokfn, batched=True)
+    train.set_format('torch')
+    val.set_format('torch')
 
-def load_sst_dataset(dir_path, split=1):
-    labels_f = os.path.join(dir_path, 'sentiment_labels.txt')
-    labels = pd.read_csv(labels_f, sep='|')
-    split_f = os.path.join(dir_path, 'datasetSplit.txt')
-    dataset_split = pd.read_csv(split_f)
-    sentences_f = os.path.join(dir_path, 'datasetSentences.txt')
-    sentences = pd.read_csv(sentences_f, sep='\t')
-    data = sentences.merge(labels, on='sentence_index', how='inner').merge(dataset_split, on='sentence_index')
-    ds = data[data.splitset_label == split]
-    return ds.sentence, ds['sentiment values']
+    training_cols = ['input_ids', 'attention_mask', 'label']
+    cols_to_remove = [c for c in train.features if c not in training_cols]
+    train = train.remove_columns(cols_to_remove)
+    val = val.remove_columns(cols_to_remove)
+
+    train, val = train.rename_column('label', 'labels'), val.rename_column('label', 'labels')
+
+    train_dl = DataLoader(train.shuffle(), batch_size=batch_size)
+    val_dl = DataLoader(val.shuffle(), batch_size=batch_size)
+
+    return train_dl, val_dl
 
 
 def thing(text, tokenizer, for_bert=False):
@@ -135,73 +137,46 @@ def thing(text, tokenizer, for_bert=False):
         attn_mask.bool()
 
 
-def chunk_zip(*args, n):
-    i = 0
-    max_len = len(args[0])
-    while i < max_len:
-        end = min(i+n, max_len)
-        yield (a[i:end] for a in args)
-        i = end
-
-
-def fine_tune_cola(model,
-                   optimizer,
-                   scheduler,
-                   ids,
-                   attention_masks,
-                   labels,
-                   n_epochs: int = 5):
-    for i in range(n_epochs):
-        for eyeds, attn_mask, lab in chunk_zip(ids, attention_masks, labels, n=5):
-            optimizer.zero_grad()
-            outs = model(eyeds, attn_mask)
-            loss = F.binary_cross_entropy(outs.squeeze(), torch.tensor(lab.to_list(), device=device).float())
-            print(f'Loss: {loss.item()}')
-            loss.backward()
-            nn.utils.clip_grad_norm_(model.parameters(), 1.0)
-            optimizer.step()
-            scheduler.step()
-
-
-class ColaDataset(Dataset):
-    def __init__(self, text, labels):
-        self.text = text
-        self.labels = labels
-
-    def __len__(self):
-        return len(self.text)
-
-    def __getitem__(self, index):
-        return {"text": self.text[index], "label": self.labels[index]}
+def thing2(text1, text2, tokenizer=None, for_bert=False):
+    inp_ids = []
+    attention_masks = []
+    for t1, t2 in zip(text1, text2):
+        encoded = tokenizer(t1, t2, padding='max_length')
+        if hasattr(encoded, 'ids'):
+            inp_ids.append(encoded.ids[0:256])
+        else:
+            inp_ids.append(encoded.input_ids[0:256])
+        attention_masks.append(encoded.attention_mask[0:256])
+    attn_mask = torch.tensor(attention_masks, device=device)
+    c = attn_mask.size(-1)
+    if not for_bert:
+        attn_mask = attn_mask[:, None, :].expand(-1, c, -1)
+    return torch.tensor(inp_ids, device=device), \
+        attn_mask.bool()
 
 
 def tokenizer_fn(tokenizer):
     def fn(example):
-        try:
-            return tokenizer(example['sentence'], padding='max_length', truncation=True, return_tensors="pt")
-        except:
-            derp = thing(example['sentence'], lambda t, padding: tokenizer.encode(t))
+        columns = [c for c in example.keys() if c not in ['idx', 'label']]
+        if len(columns) > 1:
+            derp = thing2(example[columns[0]], example[columns[1]], tokenizer=lambda t1, t2, padding: tokenizer.encode(t1, t2))
             seq_ids, attn_masks = derp
             return {'input_ids': seq_ids, 'attention_mask': attn_masks}
+        col = columns[0]
+        try:
+            return tokenizer(example[col], padding='max_length', truncation=True, return_tensors="pt")
+        except:
+            pass
+        derp = thing(example[col], tokenizer=lambda t, padding: tokenizer.encode(t))
+        seq_ids, attn_masks = derp
+        return {'input_ids': seq_ids, 'attention_mask': attn_masks}
     return fn
 
 
-def train_cola(model, tokenizer, train, val):
-    tokfn = tokenizer_fn(tokenizer)
-
-    train = train.map(tokfn, batched=True)
-    val = val.map(tokfn, batched=True)
-    train.set_format('torch')
-    val.set_format('torch')
-    train, val = train.remove_columns(['sentence', 'idx']), val.remove_columns(['sentence', 'idx'])
-    train, val = train.rename_column('label', 'labels'), val.rename_column('label', 'labels')
-
-    optimizer = AdamW(model.parameters(), lr=5e-5)
-    train_dl = DataLoader(train.shuffle())
-    val_dl = DataLoader(val.shuffle())
+def _train(model, optimizer, scheduler, train_dl, val_dl, criterion):
     for n in range(5):
         model.train()
-        for i, batch in enumerate(train_dl):
+        for i, batch in tqdm(enumerate(train_dl)):
             batch = {k: v.to(device) for k, v in batch.items()}
             outputs = model(**batch)
             loss = outputs.loss
@@ -210,7 +185,8 @@ def train_cola(model, tokenizer, train, val):
             loss.backward()
             optimizer.step()
             optimizer.zero_grad()
-        metric = evaluate.load("accuracy")
+            scheduler.step()
+        metric = evaluate.load(criterion)
         model.eval()
         for batch in val_dl:
             batch = {k: v.to(device) for k, v in batch.items()}
@@ -225,39 +201,38 @@ def train_cola(model, tokenizer, train, val):
         print(metric.compute())
 
 
-def main_bert():
-    path = 'data/glue/cola_public/raw/in_domain_dev.tsv'
-    ds = load_cola_dataset(path)
-    train, val = ds['train'], ds['validation']
-    model = transformers.BertForSequenceClassification.from_pretrained('bert-base-uncased').to(device)
-    tokenizer = BertTokenizer.from_pretrained('bert-base-uncased')
-    train_cola(model, tokenizer, train, val)
-
-
-def mainish(args):
-    ds = load_cola_dataset(None)
-    train, val = ds['train'], ds['validation']
-    tokenizer = utils.get_tokenizer(args)
-    model = utils.get_model(args, tokenizer.get_vocab_size())
-    model = GLUETuned(model, classes=1)
-    train_cola(model, tokenizer, train, val)
+def bert_main(args):
+    model, tokenizer = get_berts()
+    train_dl, val_dl = load_and_process(tokenizer, 'glue', 'sst2', batch_size=args.batch_size)
+    optimizer, scheduler = utils.learners(model, args, load=False)
+    _train(model, optimizer, scheduler, train_dl, val_dl)
 
 
 def main(args):
-    breakpoint()
-    path = 'data/glue/cola_public/raw/in_domain_dev.tsv'
-    text, labels = load_cola_dataset(path)
-    model, tokenizer = get_berts()
-    # tokenizer = utils.get_tokenizer(args)
-    ids, attn_masks = thing(text, tokenizer)
-    model = BertTuned(model, classes=1)
-    # model = utils.get_model(args, tokenizer.get_vocab_size())
-    # model = GLUETuned(model, classes=1)
+    finetune_ds = args.finetune_ds.split(',')
+    assert len(finetune_ds) == 2, 'Must specify a GLUE dataset with two parts'
+    tokenizer = utils.get_tokenizer(args)
+    train_dl, val_dl = load_and_process(tokenizer, finetune_ds[0], finetune_ds[1])
+    model = utils.get_model(args, tokenizer.get_vocab_size())
+
+    if train_dl.dataset.features['labels'].dtype == 'float32':
+        classes = 1
+        activate = False
+        loss_fn = F.mse_loss
+        criterion = 'mse'
+    else:
+        classes = train_dl.dataset.features['labels'].num_classes
+        activate = True
+        loss_fn = F.binary_cross_entropy
+        criterion = 'accuracy'
+    model = GLUETuned(model, classes=classes, activate=activate, loss_fn=loss_fn)
     optimizer, scheduler = utils.learners(model, args, load=False)
-    fine_tune_cola(model, optimizer, scheduler, ids, attn_masks, labels, n_epochs=10)
+    _train(model, optimizer, scheduler, train_dl, val_dl, criterion)
 
 
 if __name__ == '__main__':
-    main_bert()
-    # main(utils.parse_args())
-    # mainish(utils.parse_args())
+    """tokenizer = tokenizers.BertWordPieceTokenizer.from_file('tokenizers/wordpiece_enwik8.txt')
+    tokenizer.enable_padding(length=256)
+    ds = load_and_process(tokenizer, 'glue', 'sst2')
+    breakpoint()"""
+    main(utils.parse_args())

@@ -117,7 +117,8 @@ class SmallBirdSparseAttention(SparseSelfAttention):
         indices_fl = indices.float()
         # For each point (self.k), we expect to sample the 2**rank closest points from the first set of sampling,
         # then self.gadditional globally-sampled indices, and self.nadditional neighborhood-sampled indices.
-        num_points = self.k * (2 ** rank + self.gadditional + self.nadditional)
+        n_add = 2 ** rank + self.gadditional + self.nadditional if self.training else 1
+        num_points = self.k * n_add
         assert indices.size() == (batch, context, num_points, 1), f'Expected size {(batch, context, num_points, 1)}. ' \
                                                                   f'Got {indices.size()}'
         densities = sparse.densities(indices_fl, means, sigmas).clone()  # (B, C, P, self.k)
@@ -322,7 +323,7 @@ class SmallBirdSparseAttention(SparseSelfAttention):
         blocked_key_matrix = key_layer.view(b, h, n // wn, wn, -1)
         blocked_value_matrix = value_layer.view(b, h, n // wn, wn, -1)
 
-        # preparing block for randn attn
+        # preparing block for adaptive attn
         gathered_key = self.torch_gather_b2(blocked_key_matrix, adaptive_attn_inds)
         gathered_key = gathered_key.view(b, h, n // wn - 2, r * wn, -1)  # [b, h, n//wn-2, r, wn, -1]
         gathered_value = self.torch_gather_b2(blocked_value_matrix, adaptive_attn_inds)
