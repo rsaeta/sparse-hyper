@@ -158,12 +158,5 @@ def main():
         wandb.finish()
 
 
-def derp():
-    args = argparse.Namespace()
-    args.__dict__.update(resume_run='/home/rsaeta/sparse-hyper/dabirds3', save_last_only=True, save_dir=None)
-    new_args = get_resume_args(args)
-    print(new_args)
-
-
 if __name__ == '__main__':
     main()
