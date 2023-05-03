@@ -262,6 +262,7 @@ def get_resume_args(args):
     if args.interact:
         new_args.__dict__.update(interact=True)
     new_args.__dict__.update(save_last_only=args.save_last_only)
+    new_args.__dict__.update(production=args.production)
     return new_args
 
 
