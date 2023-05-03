@@ -1,6 +1,7 @@
 import dataclasses
 
 from tqdm import tqdm
+import wandb
 import torch
 from datasets import load_dataset
 from torch import nn, Tensor
@@ -11,6 +12,16 @@ import evaluate
 from transformers import BertForSequenceClassification, BertTokenizer
 
 device = utils.device
+
+
+def init_wandb(args):
+    wandb.init(
+        project='model-finetuning',
+        config={
+            'model': args.load_model,
+            'dataset': args.finetune_ds,
+        }
+    )
 
 
 def get_berts():
@@ -119,7 +130,7 @@ def load_and_process(tokenizer, *args, batch_size=32, subset=1000):
     return train_dl, val_dl
 
 
-def thing(text, tokenizer, for_bert=False):
+def sample_single_sentence(text, tokenizer, for_bert=False):
     inp_ids = []
     attention_masks = []
     for t in text:
@@ -137,7 +148,7 @@ def thing(text, tokenizer, for_bert=False):
         attn_mask.bool()
 
 
-def thing2(text1, text2, tokenizer=None, for_bert=False):
+def sample_sentence_pair(text1, text2, tokenizer=None, for_bert=False):
     inp_ids = []
     attention_masks = []
     for t1, t2 in zip(text1, text2):
@@ -159,16 +170,16 @@ def tokenizer_fn(tokenizer):
     def fn(example):
         columns = [c for c in example.keys() if c not in ['idx', 'label']]
         if len(columns) > 1:
-            derp = thing2(example[columns[0]], example[columns[1]], tokenizer=lambda t1, t2, padding: tokenizer.encode(t1, t2))
-            seq_ids, attn_masks = derp
+            sample = sample_sentence_pair(example[columns[0]], example[columns[1]], tokenizer=lambda t1, t2, padding: tokenizer.encode(t1, t2))
+            seq_ids, attn_masks = sample
             return {'input_ids': seq_ids, 'attention_mask': attn_masks}
         col = columns[0]
         try:
             return tokenizer(example[col], padding='max_length', truncation=True, return_tensors="pt")
         except:
             pass
-        derp = thing(example[col], tokenizer=lambda t, padding: tokenizer.encode(t))
-        seq_ids, attn_masks = derp
+        sample = sample_single_sentence(example[col], tokenizer=lambda t, padding: tokenizer.encode(t))
+        seq_ids, attn_masks = sample
         return {'input_ids': seq_ids, 'attention_mask': attn_masks}
     return fn
 
@@ -181,6 +192,7 @@ def _train(model, optimizer, scheduler, train_dl, val_dl, criterion):
             outputs = model(**batch)
             loss = outputs.loss
             if i % 10 == 0:
+                wandb.log({'loss': loss.item()})
                 print(loss.item())
             loss.backward()
             optimizer.step()
@@ -198,7 +210,9 @@ def _train(model, optimizer, scheduler, train_dl, val_dl, criterion):
             else:
                 predictions = torch.round(logits)
             metric.add_batch(predictions=predictions, references=batch['labels'])
-        print(metric.compute())
+        res = metric.compute()
+        wandb.log({'criterion': res})
+        print(res)
 
 
 def bert_main(args):
@@ -215,11 +229,13 @@ def main(args):
     train_dl, val_dl = load_and_process(tokenizer, finetune_ds[0], finetune_ds[1])
     model = utils.get_model(args, tokenizer.get_vocab_size())
 
+    # Regression
     if train_dl.dataset.features['labels'].dtype == 'float32':
         classes = 1
         activate = False
         loss_fn = F.mse_loss
         criterion = 'mse'
+    # Classification
     else:
         classes = train_dl.dataset.features['labels'].num_classes
         activate = True
@@ -231,8 +247,4 @@ def main(args):
 
 
 if __name__ == '__main__':
-    """tokenizer = tokenizers.BertWordPieceTokenizer.from_file('tokenizers/wordpiece_enwik8.txt')
-    tokenizer.enable_padding(length=256)
-    ds = load_and_process(tokenizer, 'glue', 'sst2')
-    breakpoint()"""
     main(utils.parse_args())
