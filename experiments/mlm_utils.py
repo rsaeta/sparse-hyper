@@ -60,10 +60,13 @@ def sample_batch(data, tokenizer, length, batch_size, min_length, mask_p=0.15):
     mask = torch.logical_and(mask, ~(seqs_inputs == sep_token))
     targets = seqs_inputs.detach().clone()
     seqs_inputs.masked_fill_(mask, mask_token)
-    if cuda:
-        seqs_inputs = seqs_inputs.cuda()
     c = attention_masks.size(-1)
     attention_masks = attention_masks[:, None, :].expand(-1, c, -1)
+    if cuda:
+        seqs_inputs = seqs_inputs.cuda()
+        attention_masks = attention_masks.cuda()
+        targets = targets.cuda()
+        mask = mask.cuda()
     return seqs_inputs, attention_masks, targets, mask
 
 

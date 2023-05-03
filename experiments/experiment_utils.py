@@ -263,3 +263,10 @@ def get_resume_args(args):
         new_args.__dict__.update(interact=True)
     new_args.__dict__.update(save_last_only=args.save_last_only)
     return new_args
+
+
+def save_model(args, model, optimizer, scheduler, checkpoint_num):
+    f_name = f'{args.save_dir}/' if args.save_last_only else f'{args.save_dir}/checkpoint_{checkpoint_num}_'
+    torch.save(model.state_dict(), f_name + 'model.pt')
+    torch.save(optimizer.state_dict(), f_name + 'optimizer.pt')
+    torch.save(scheduler.state_dict(), f_name + 'scheduler.pt')

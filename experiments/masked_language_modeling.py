@@ -9,7 +9,8 @@ from experiment_utils import (
     setup,
     get_tokenizer,
     cuda, 
-    get_resume_args
+    get_resume_args,
+    save_model,
 )
 from mlm_components import enwik8
 
@@ -62,15 +63,13 @@ def train(args: argparse.Namespace):
         num_micro_batches = 1
     mb_size = args.batch_size if args.micro_batch_size is None else args.micro_batch_size
     for i in range(args.num_batches * num_micro_batches):
-        model.train(True)
+        model.train()
         source, attn_masks, target, mask = sample_batch(data_train,
                                                         tokenizer,
                                                         length=args.context,
                                                         batch_size=mb_size,
                                                         min_length=args.context // 3)
-        if cuda:
-            source, attn_masks, target, mask = source.cuda(), attn_masks.cuda(), target.cuda(), mask.cuda()
-
+        
         tokens_seen += (source != pad_token).sum()
         logits = model(source, attn_masks)
 
@@ -86,12 +85,14 @@ def train(args: argparse.Namespace):
             }, commit=False, step=i)
             batch_loss = 0.
 
+        # Run backpropagation every num_micro_batches
         if i % num_micro_batches == 0:
             torch.nn.utils.clip_grad_norm_(model.parameters(), args.clipping_value)
             optimizer.step()
             scheduler.step()
             optimizer.zero_grad()
 
+        # Run validation every validation_every batches
         if i % args.validation_every == 0 and i > 0:
             model.eval()
             source, attn_masks, target, mask = sample_batch(data_test,
@@ -99,8 +100,6 @@ def train(args: argparse.Namespace):
                                                             length=args.context,
                                                             batch_size=mb_size,
                                                             min_length=args.context // 3)
-            if cuda:
-                source, attn_masks, target, mask = source.cuda(), attn_masks.cuda(), target.cuda(), mask.cuda()
             logits = model(source, attn_masks)
             loss = F.cross_entropy(logits[mask].reshape(-1, vocab_size), target[mask].reshape(-1), reduction='mean')
             to_log = {'validation_loss': loss.item()}
@@ -121,10 +120,7 @@ def train(args: argparse.Namespace):
                     attention_viz(m, s, (context, context),
                                   save_file=f'{args.save_dir}/{n_validated // args.save_every}_attention_{layer}.pdf')
             if n_validated % args.save_every == 0:
-                f_name = f'{args.save_dir}/' if args.save_last_only else f'{args.save_dir}/checkpoint_{n_validated // args.save_every}_'
-                torch.save(model.state_dict(), f_name + 'model.pt')
-                torch.save(optimizer.state_dict(), f_name + 'optimizer.pt')
-                torch.save(scheduler.state_dict(), f_name + 'scheduler.pt')
+                save_model(args, model, optimizer, scheduler, n_validated // args.save_every)
 
 
 def interact(args):
