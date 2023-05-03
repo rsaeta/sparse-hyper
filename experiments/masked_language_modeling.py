@@ -8,6 +8,8 @@ from experiment_utils import (
     learners,
     setup,
     get_tokenizer,
+    cuda, 
+    get_resume_args
 )
 from mlm_components import enwik8
 
@@ -16,16 +18,15 @@ import torch.nn.functional as F
 
 import wandb
 
-from experiment_utils import cuda, get_resume_args
 from mlm_utils import sample_batch, ttos
 from plot_utils import attention_viz
 
 
 def init_wandb(args):
     dir_path = os.path.dirname(os.path.realpath(__file__))
-
+    proj_suffix = 'prod' if args.production else 'dev'
     wandb.init(
-        project='sparse-masked-transformer',
+        project=f'sparse-masked-transformer-{proj_suffix}',
         config={
             'context': args.context,
             'lr': args.learning_rate,
@@ -35,6 +36,7 @@ def init_wandb(args):
             'attention': args.attention_type,
             'gitsha': git.Repo(dir_path, search_parent_directories=True).head.object.hexsha,
             'model_type': args.model_type,
+            'dir_path': dir_path,
         }
     )
 

@@ -112,6 +112,7 @@ def parse_args() -> Namespace:
     parser.add_argument('--resume-run', dest='resume_run', default=None, type=str)
     parser.add_argument('--save-last', dest='save_last_only', action='store_true')
     parser.add_argument('--finetune-ds', dest='finetune_ds', default=None, type=str)
+    parser.add_argument('--production', action='store_true', dest='production')
     options = parser.parse_args()
     return options
 
