@@ -114,6 +114,7 @@ def parse_args() -> Namespace:
     parser.add_argument('--finetune-ds', dest='finetune_ds', default=None, type=str)
     parser.add_argument('--production', action='store_true', dest='production')
     parser.add_argument('--finetune-subset', dest='finetune_subset', default=-1, type=int)
+    parser.add_argument('--finetune-epochs', dest='finetune_epochs', default=5, type=int)
     options = parser.parse_args()
     return options
 
