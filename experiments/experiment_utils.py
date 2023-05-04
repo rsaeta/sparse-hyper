@@ -113,6 +113,7 @@ def parse_args() -> Namespace:
     parser.add_argument('--save-last', dest='save_last_only', action='store_true')
     parser.add_argument('--finetune-ds', dest='finetune_ds', default=None, type=str)
     parser.add_argument('--production', action='store_true', dest='production')
+    parser.add_argument('--finetune-subset', dest='finetune_subset', default=-1, type=int)
     options = parser.parse_args()
     return options
 
@@ -156,7 +157,7 @@ def get_model(args: Namespace, vocab_size: int, mask: bool = False) -> Generatin
         mask=mask,
     )
     if args.load_model is not None:
-        state_dict = torch.load(args.load_model, map_location=torch.device('cuda') \
+        state_dict = torch.load(args.load_model, map_location=torch.device('cuda')
                                 if cuda else torch.device('cpu'))
         model.load_state_dict(state_dict)
     if cuda:
@@ -181,14 +182,14 @@ def learners(model, args, load=True):
                                                       lambda _: 1.)
         return optimizer, scheduler
     if args.load_model is not None and load:
-        optimizername = args.load_model.replace('model.pt', 'optimizer.pt')
-        schedulername = args.load_model.replace('model.pt', 'scheduler.pt')
-        if os.path.isfile(optimizername):
-            state_dict = torch.load(optimizername, map_location=torch.device('cuda') \
+        optimizer_name = args.load_model.replace('model.pt', 'optimizer.pt')
+        schedule_name = args.load_model.replace('model.pt', 'scheduler.pt')
+        if os.path.isfile(optimizer_name):
+            state_dict = torch.load(optimizer_name, map_location=torch.device('cuda')
                                     if cuda else torch.device('cpu'))
             optimizer.load_state_dict(state_dict)
-        if os.path.isfile(schedulername) and not args.constant_lr:
-            state_dict = torch.load(schedulername, map_location=torch.device('cuda') \
+        if os.path.isfile(schedule_name) and not args.constant_lr:
+            state_dict = torch.load(schedule_name, map_location=torch.device('cuda')
                                     if cuda else torch.device('cpu'))
             scheduler.load_state_dict(state_dict)
 
@@ -227,7 +228,7 @@ def find_latest_model(path: str) -> str:
     files = os.listdir(path)
     max_checkpoint = -1
     for f in files:
-        match = re.match('.*/?checkpoint_(\d+)_model.pt', f)
+        match = re.match(r'.*/?checkpoint_(\d+)_model.pt', f)
         if match is not None:
             if int(match[1]) > max_checkpoint:
                 max_checkpoint = int(match[1])
