@@ -1,6 +1,6 @@
 """
 This file will hold experiments around making synthetic masks for the MLM task by replacing
-tokens with the [MASK] token but then placing the target outside of the receptive field for a
+tokens with the [MASK] token but then placing the target outside the receptive field for a
 normal convolutional model. This will allow us to see if the model can learn to use the
 adaptive receptive field to learn to predict the target token.
 """

@@ -138,7 +138,7 @@ class OneDimensionalSparseAttenion(nn.Module):
     def hyper(self, x: torch.Tensor) -> Tuple[Tensor, Tensor, Tensor]:
         raise NotImplementedError("You gotta implement this yourself")
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
+    def forward(self, x: torch.Tensor, attention_mask: torch.Tensor) -> torch.Tensor:
         means, sigmas, values = self.hyper(x)  # (B, C, k, 1); (B, C, k, 1); (B, C, k)
         batch, context, emb = x.size()  # (B, C, E)
         rank = means.size(-1)
@@ -508,6 +508,7 @@ class EasySlidingWindowAttention(MultiHeadAttention):
         sliding_window_attn = sliding_window_attn.expand_as(attention_mask)
         attention_mask = torch.logical_and(attention_mask, sliding_window_attn)
         return super().forward(x, attention_mask)
+
 
 class NativeAttention(nn.Module):
     def __init__(self, num_heads, emb, context, mask, **kwargs):

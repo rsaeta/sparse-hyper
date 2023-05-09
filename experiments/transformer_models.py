@@ -7,7 +7,8 @@ from bigbird import BigBirdBlockSparseAttention, BigBirdConfig
 from smallbird import SmallBirdSparseAttention, SmallBirdConfig
 from smallest_bird import SmallerBirdConfig, SmallerBirdSparseAttention
 # from longformer_sliding_window import LongformerSelfAttention
-from sliding_window import SlidingWindowAttention, SlidingWindowConfig
+# from sliding_window import SlidingWindowAttention, SlidingWindowConfig
+from bigbird_mod import BigBirdModSelfAttention
 from attention_layers import (
     SparseSelfAttention, 
     BlocksparseFixedSelfAttention, 
@@ -40,6 +41,7 @@ attention_types = Literal[
     'smallbird',
     'smallerbird',
     'sliding-window',
+    'bigbird-mod',
 ]
 
 
@@ -104,6 +106,17 @@ class TransformerBlock(nn.Module):
             }
             cfg = SmallerBirdConfig.from_dict(d)
             self.attend = SmallerBirdSparseAttention(cfg)
+        elif attention_type == 'bigbird-mod':
+            d = {
+                'max_position_embeddings': context,
+                'num_attention_heads': heads,
+                'hidden_size': emb,
+                'num_random_blocks': k,
+                'block_size': 1,
+                **kwargs,
+            }
+            cfg = SmallerBirdConfig.from_dict(d)
+            self.attend = BigBirdModSelfAttention(cfg)
         else:
             raise ValueError(f'attention_type {attention_type} not recognized')
 
