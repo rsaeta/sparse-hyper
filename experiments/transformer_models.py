@@ -176,6 +176,30 @@ class MaskedSequential(nn.Sequential):
         return x
 
 
+class LearnedPosEmbedding(nn.Module):
+
+    def __init__(self, seq_len, emb_dim):
+        super().__init__()
+        self.embedding = nn.Embedding(num_embeddings=seq_len, embedding_dim=emb_dim)
+
+    def forward(self, seq: Tensor) -> Tensor:
+        """Takes an embedded sequence and adds learned pos embeddings to it"""
+        c = seq.shape[-2]
+        pos = torch.arange(c, device=util.d(seq))
+        pos_embeds = self.embedding(pos).expand_as(seq)
+        return seq + pos_embeds
+
+
+class EasyPosEmbedding(nn.Module):
+    """
+    Takes an embedding and adds a positional embedding to it.
+    """
+    def forward(self, seq: Tensor) -> Tensor:
+        b, c, e = seq.size()
+        pos = torch.arange(c, device=util.d(seq))[None, :].expand(b, -1)
+        pos = pos[:, :, None]
+        return torch.cat([seq, pos], dim=-1)
+
 class SparseTransformer(nn.Module):
     def __init__(self,
                  n_blocks: int,
@@ -184,13 +208,18 @@ class SparseTransformer(nn.Module):
                  vocab_size: int,
                  attention_type: str = None,
                  attentions: List[str] = None,
+                 pos_embedding: str = 'learned',
                  *args,
                  **kwargs):
         super().__init__()
         self.context_len = context_len
         self.vocab_size = vocab_size
-        self.token_embedding = nn.Embedding(num_embeddings=vocab_size, embedding_dim=emb)
-        self.pos_embedding = nn.Embedding(num_embeddings=context_len, embedding_dim=emb)
+        if pos_embedding == 'learned':
+            self.token_embedding = nn.Embedding(num_embeddings=vocab_size, embedding_dim=emb)
+            self.pos_embedding = LearnedPosEmbedding(context_len, emb)
+        elif pos_embedding == 'easy':
+            self.token_embedding = nn.Embedding(num_embeddings=vocab_size, embedding_dim=emb-1)
+            self.pos_embedding = EasyPosEmbedding()
 
         if (attentions is not None and 'dilated' in attentions) or (attention_type == 'dilated'):
             self.shared_predictor = nn.Sequential(nn.Linear(1, 10),
@@ -224,10 +253,7 @@ class SparseTransformer(nn.Module):
     def embed(self, x: Tensor) -> Tensor:
         # Here we'll do some embedding addition
         x = self.token_embedding(x)
-        b, c, e = x.size()
-        positions = self.pos_embedding(torch.arange(self.context_len, dtype=torch.int, device=util.d(x)))[None, :, :] \
-            .expand(b, -1, -1)
-        return positions + x
+        return self.pos_embedding(x)
 
     def forward(self, x: Tensor, attention_mask: Tensor) -> Tensor:
         embedded = self.embed(x)  # (batch, context_len, emb)
