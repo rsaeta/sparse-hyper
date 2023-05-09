@@ -115,6 +115,9 @@ def parse_args() -> Namespace:
     parser.add_argument('--production', action='store_true', dest='production')
     parser.add_argument('--finetune-subset', dest='finetune_subset', default=-1, type=int)
     parser.add_argument('--finetune-epochs', dest='finetune_epochs', default=5, type=int)
+    parser.add_argument('--pos-embedding', dest='pos_embedding', default='learned', type=str, choices=[
+        'learned', 'easy'
+    ])
     options = parser.parse_args()
     return options
 
@@ -156,6 +159,7 @@ def get_model(args: Namespace, vocab_size: int, mask: bool = False) -> Generatin
         attention_type=args.attention_type,
         attentions=attentions,
         mask=mask,
+        pos_embedding=args.pos_embedding,
     )
     if args.load_model is not None:
         state_dict = torch.load(args.load_model, map_location=torch.device('cuda')
