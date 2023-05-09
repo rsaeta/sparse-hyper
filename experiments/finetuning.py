@@ -14,6 +14,19 @@ from transformers import BertForSequenceClassification, BertTokenizer
 device = utils.device
 
 
+glue_datasets = [
+    'glue,cola',
+    'glue,mnli',
+    'glue,mrpc',
+    'glue,qnli',
+    'glue,qqp',
+    'glue,rte',
+    'glue,sst2',
+    'glue,stsb',
+    'glue,wnli',
+]
+
+
 def init_wandb(args):
     wandb.init(
         project='model-finetuning',
@@ -22,12 +35,6 @@ def init_wandb(args):
             'dataset': args.finetune_ds,
         }
     )
-
-
-def get_berts():
-    bert = BertForSequenceClassification.from_pretrained("bert-base-uncased").to(device)
-    tokenizer = BertTokenizer.from_pretrained("bert-base-uncased", padding='max_length')
-    return bert, tokenizer
 
 
 class BertTuned(nn.Module):
@@ -46,7 +53,7 @@ class BertTuned(nn.Module):
         else:
             self.final = None
 
-    def forward(self, x: torch.Tensor, attention_mask: torch.Tensor):
+    def forward(self, x: torch.Tensor, attention_mask: torch.Tensor, labels: torch.Tensor = None):
         _, pooled_output = self.bert(input_ids=x, attention_mask=attention_mask, return_dict=False)
         dropout = self.dropout(pooled_output)
         lin = self.final(dropout)
@@ -92,17 +99,18 @@ class GLUETuned(nn.Module):
                 logits = logits[:, 0, :]  # take the first token of the sequence as the pooled output ([CLS])
             logits = self.final(logits)
         if labels is not None:
-            loss = self.loss_fn(logits.squeeze(1), labels.float())
+            loss = self.loss_fn(logits, labels)
         else:
             loss = None
         return GlueOutput(loss, logits)
 
 
-def load_and_process(tokenizer, *args, batch_size=32, subset=1000):
+def load_and_process(tokenizer, *args, batch_size=32, subset=None):
     """
     Loads the dataset and does the label replacement for the GLUE datasets.
     Returns a tuple of train and validation datasets.
     """
+    subset = subset if subset > 0 else None
     dataset = load_dataset(*args)
     valkey = 'validation_matched' if 'validation_matched' in dataset else 'validation'
     train, val = dataset['train'], dataset[valkey]
@@ -169,7 +177,12 @@ def sample_sentence_pair(text1, text2, tokenizer=None, for_bert=False):
 def tokenizer_fn(tokenizer):
     def fn(example):
         columns = [c for c in example.keys() if c not in ['idx', 'label']]
+
         if len(columns) > 1:
+            try:
+                return tokenizer(example[columns[0]], example[columns[1]], padding='max_length', return_tensors="pt")
+            except:
+                pass
             sample = sample_sentence_pair(example[columns[0]], example[columns[1]], tokenizer=lambda t1, t2, padding: tokenizer.encode(t1, t2))
             seq_ids, attn_masks = sample
             return {'input_ids': seq_ids, 'attention_mask': attn_masks}
@@ -184,15 +197,15 @@ def tokenizer_fn(tokenizer):
     return fn
 
 
-def _train(model, optimizer, scheduler, train_dl, val_dl, criterion):
-    for n in range(5):
+def _train(model, optimizer, scheduler, train_dl, val_dl, criterion, nepochs):
+    for n in range(nepochs):
         model.train()
         for i, batch in tqdm(enumerate(train_dl)):
             batch = {k: v.to(device) for k, v in batch.items()}
             outputs = model(**batch)
             loss = outputs.loss
             if i % 10 == 0:
-                wandb.log({'loss': loss.item()})
+                wandb.log({'loss': loss.item()}, commit=False)
                 print(loss.item())
             loss.backward()
             optimizer.step()
@@ -210,23 +223,44 @@ def _train(model, optimizer, scheduler, train_dl, val_dl, criterion):
             else:
                 predictions = torch.round(logits)
             metric.add_batch(predictions=predictions, references=batch['labels'])
-        res = metric.compute()
+        mc_kwargs = {} if criterion != 'f1' else {'average': 'macro'}
+        res = metric.compute(**mc_kwargs)
         wandb.log({'criterion': res})
         print(res)
+    return model
 
 
 def bert_main(args):
-    model, tokenizer = get_berts()
-    train_dl, val_dl = load_and_process(tokenizer, 'glue', 'sst2', batch_size=args.batch_size)
-    optimizer, scheduler = utils.learners(model, args, load=False)
-    _train(model, optimizer, scheduler, train_dl, val_dl)
+    init_wandb(args)
+    tokenizer = BertTokenizer.from_pretrained("bert-base-uncased", padding='max_length')
+    for ds in glue_datasets:
+        print(f'########### Training on {ds} ###########')
+        train_dl, val_dl = load_and_process(tokenizer, *ds.split(','), batch_size=4, subset=args.finetune_subset)
+        # Regression
+        if train_dl.dataset.features['labels'].dtype == 'float32':
+            classes = 1
+            activate = False
+            loss_fn = F.mse_loss
+            criterion = 'mse'
+        # Classification
+        else:
+            classes = train_dl.dataset.features['labels'].num_classes
+            # if classes == 2:  # binary classification only needs one class distributions
+              #  classes = 1
+            activate = True
+            loss_fn = F.binary_cross_entropy
+            criterion = 'accuracy'
+
+        model = BertForSequenceClassification.from_pretrained("bert-base-uncased", num_labels=classes).to(device)
+        optimizer, scheduler = utils.learners(model, args, load=False)
+        _train(model, optimizer, scheduler, train_dl, val_dl, criterion, 1)
 
 
-def main(args):
+def _run(args):
     finetune_ds = args.finetune_ds.split(',')
     assert len(finetune_ds) == 2, 'Must specify a GLUE dataset with two parts'
     tokenizer = utils.get_tokenizer(args)
-    train_dl, val_dl = load_and_process(tokenizer, finetune_ds[0], finetune_ds[1])
+    train_dl, val_dl = load_and_process(tokenizer, finetune_ds[0], finetune_ds[1], subset=args.finetune_subset)
     model = utils.get_model(args, tokenizer.get_vocab_size())
 
     # Regression
@@ -239,11 +273,30 @@ def main(args):
     else:
         classes = train_dl.dataset.features['labels'].num_classes
         activate = True
-        loss_fn = F.binary_cross_entropy
-        criterion = 'accuracy'
+        if classes == 2:  # binary classification only needs one class distributions
+            classes = 1
+            loss_fn = lambda logits, labels: F.binary_cross_entropy_with_logits(logits.squeeze(1), labels.float())
+            criterion = 'accuracy'
+        else:
+            loss_fn = lambda logits, labels: F.cross_entropy(logits, labels)
+            criterion = 'f1'
+    print(classes)
     model = GLUETuned(model, classes=classes, activate=activate, loss_fn=loss_fn)
     optimizer, scheduler = utils.learners(model, args, load=False)
-    _train(model, optimizer, scheduler, train_dl, val_dl, criterion)
+    init_wandb(args)
+    model = _train(model, optimizer, scheduler, train_dl, val_dl, criterion, args.finetune_epochs)
+    utils.save_model(args, model, optimizer, scheduler, '_'.join(finetune_ds))
+
+
+def main(args):
+    if args.finetune_ds:
+        _run(args)
+        return
+    print('No finetune dataset specified, running all GLUE datasets')
+    for ds in glue_datasets:
+        args.finetune_ds = ds
+        print(f'########### Training on {ds} ###########')
+        _run(args)
 
 
 if __name__ == '__main__':
