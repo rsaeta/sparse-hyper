@@ -485,6 +485,7 @@ class MultiHeadAttention(nn.Module):
 
     def __init__(self, num_heads, head_size, n_embd, block_size, dropout=0.0, **kwargs):
         super().__init__()
+        self.block_size = block_size
         self.heads = nn.ModuleList([Head(head_size, n_embd, block_size, **kwargs) for _ in range(num_heads)])
         self.proj = nn.Linear(head_size * num_heads, n_embd)
         self.dropout = nn.Dropout(dropout)
@@ -494,6 +495,19 @@ class MultiHeadAttention(nn.Module):
         out = self.dropout(self.proj(out))
         return out
 
+
+class EasySlidingWindowAttention(MultiHeadAttention):
+
+    def forward(self, x: Tensor, attention_mask: Tensor):
+        c = x.shape[-2]
+        sliding_window_attn = torch.zeros((c, c), device=x.device)
+        r = torch.arange(c)
+        sliding_window_attn[r, torch.remainder(r + 1, c)] = 1  # forward attention
+        sliding_window_attn[r, torch.remainder(r - 1, c)] = 1  # backward attention
+        sliding_window_attn[r, torch.remainder(r, c)] = 1  # selfish attention
+        sliding_window_attn = sliding_window_attn.expand_as(attention_mask)
+        attention_mask = torch.logical_and(attention_mask, sliding_window_attn)
+        return super().forward(x, attention_mask)
 
 class NativeAttention(nn.Module):
     def __init__(self, num_heads, emb, context, mask, **kwargs):

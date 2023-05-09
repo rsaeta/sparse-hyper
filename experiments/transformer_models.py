@@ -6,6 +6,8 @@ from sparse import util
 from bigbird import BigBirdBlockSparseAttention, BigBirdConfig
 from smallbird import SmallBirdSparseAttention, SmallBirdConfig
 from smallest_bird import SmallerBirdConfig, SmallerBirdSparseAttention
+# from longformer_sliding_window import LongformerSelfAttention
+from sliding_window import SlidingWindowAttention, SlidingWindowConfig
 from attention_layers import (
     SparseSelfAttention, 
     BlocksparseFixedSelfAttention, 
@@ -15,6 +17,7 @@ from attention_layers import (
     DynamicDilatedAttention,
     AlphaEntmax,
     NonadaptiveSparseAttention,
+    EasySlidingWindowAttention,
 )
 
 try:
@@ -36,6 +39,7 @@ attention_types = Literal[
     'bigbird',
     'smallbird',
     'smallerbird',
+    'sliding-window',
 ]
 
 
@@ -55,6 +59,8 @@ class TransformerBlock(nn.Module):
         super().__init__()  
         if attention_type == 'dense':
             self.attend = MultiHeadAttention(heads, emb, emb, context, **kwargs)
+        elif attention_type == 'sliding-window':
+            self.attend = EasySlidingWindowAttention(heads, emb, emb, context, **kwargs)
         elif attention_type == 'sparse':
             self.attend = SparseSelfAttention(emb, context, n_heads=heads, **kwargs)
         elif attention_type == 'fixed':
