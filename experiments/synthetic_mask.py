@@ -18,6 +18,7 @@ from experiment_utils import (
     parse_args,
     setup,
     learners,
+    save_model,
 )
 from mlm_components import enwik8
 
@@ -108,13 +109,25 @@ def _train(args):
         loss = F.cross_entropy(logits[batch_eyes, mask, :], targets[batch_eyes, mask], reduction='mean')
         if i % args.log_every == 0:
             to_log = {'loss': loss.item(), 'tokens_seen': tokens_seen}
-            print(to_log)
             wandb.log(to_log)
         loss.backward()
         torch.nn.utils.clip_grad_norm_(model.parameters(), args.clipping_value)
         optimizer.step()
         scheduler.step()
         tokens_seen += seqs_inputs.size(0) * seqs_inputs.size(1)
+
+        if i % args.validation_every == 0:
+            model.eval()
+            seqs_inputs, attention_masks, targets, mask = simple_sample_data(data_val, tokenizer, args.batch_size,
+                                                                             args.context)
+            logits = model(seqs_inputs, attention_masks)
+            batch_eyes = torch.arange(seqs_inputs.size(0))
+            loss = F.cross_entropy(logits[batch_eyes, mask, :], targets[batch_eyes, mask], reduction='mean')
+            to_log = {'val_loss': loss.item()}
+            wandb.log(to_log)
+
+        if args.save_dir is not None and i % args.save_every == 0:
+            save_model(args, model, optimizer, scheduler, i // args.save_every)
 
 
 def main(args):
