@@ -62,7 +62,7 @@ def simple_sample_data(data, tokenizer, batch_size, seq_len, offset=70):
         attention_masks.append(attention_mask)
     seqs_inputs = torch.tensor(encoded_ids)
     attention_masks = torch.tensor(attention_masks).bool()
-    mask = torch.ones(size=(batch_size,)) * 45
+    mask = torch.ones(size=(batch_size,)).long() * 45
     targets = seqs_inputs.detach().clone()
     # Modify the input so that the masked token positions are filled with [MASK] tokens
     # and the token at position mask + offset is the target token.
