@@ -109,6 +109,8 @@ def _train(args):
         loss = F.cross_entropy(logits[batch_eyes, mask, :], targets[batch_eyes, mask], reduction='mean')
         if i % args.log_every == 0:
             to_log = {'loss': loss.item(), 'tokens_seen': tokens_seen}
+            if 'WANDB_MODE' in os.environ:
+                print(to_log)
             wandb.log(to_log)
         loss.backward()
         torch.nn.utils.clip_grad_norm_(model.parameters(), args.clipping_value)

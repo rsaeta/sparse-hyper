@@ -25,7 +25,7 @@ try:
 except ImportError:
     from typing_extensions import get_args
 
-from transformer_models import attention_types
+from transformer_models import attention_types, pos_encodings
 
 cuda = torch.cuda.is_available()
 device = torch.device('cuda' if cuda else 'cpu')
@@ -115,9 +115,8 @@ def parse_args() -> Namespace:
     parser.add_argument('--production', action='store_true', dest='production')
     parser.add_argument('--finetune-subset', dest='finetune_subset', default=-1, type=int)
     parser.add_argument('--finetune-epochs', dest='finetune_epochs', default=5, type=int)
-    parser.add_argument('--pos-embedding', dest='pos_embedding', default='learned', type=str, choices=[
-        'learned', 'easy'
-    ])
+    parser.add_argument('--pos-embedding', dest='pos_embedding', default='learned', type=str,
+                        choices=get_args(pos_encodings))
     options = parser.parse_args()
     return options
 

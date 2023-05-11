@@ -10,9 +10,9 @@ from smallest_bird import SmallerBirdConfig, SmallerBirdSparseAttention
 # from sliding_window import SlidingWindowAttention, SlidingWindowConfig
 from bigbird_mod import BigBirdModSelfAttention
 from attention_layers import (
-    SparseSelfAttention, 
-    BlocksparseFixedSelfAttention, 
-    MultiHeadAttention, 
+    SparseSelfAttention,
+    BlocksparseFixedSelfAttention,
+    MultiHeadAttention,
     ReallySparseAttention,
     NativeAttention,
     DynamicDilatedAttention,
@@ -20,6 +20,7 @@ from attention_layers import (
     NonadaptiveSparseAttention,
     EasySlidingWindowAttention,
 )
+from positional_encodings.torch_encodings import PositionalEncoding1D, Summer
 
 try:
     from typing import Literal
@@ -44,6 +45,12 @@ attention_types = Literal[
     'bigbird-mod',
 ]
 
+pos_encodings = Literal[
+    'learned',
+    'sinusoidal',
+    'easy',
+]
+
 
 class TransformerBlock(nn.Module):
 
@@ -58,29 +65,31 @@ class TransformerBlock(nn.Module):
                  shared_predictor: nn.Module = None,
                  k = 4,
                  **kwargs):
+        breakpoint()
         super().__init__()  
         if attention_type == 'dense':
             self.attend = MultiHeadAttention(heads, emb, emb, context, **kwargs)
         elif attention_type == 'sliding-window':
             self.attend = EasySlidingWindowAttention(heads, emb, emb, context, **kwargs)
         elif attention_type == 'sparse':
-            self.attend = SparseSelfAttention(emb, context, n_heads=heads, **kwargs)
+            self.attend = SparseSelfAttention(emb, context, n_heads=heads, k=k, **kwargs)
         elif attention_type == 'fixed':
-            self.attend = BlocksparseFixedSelfAttention(emb, t=context, **kwargs)
+            self.attend = BlocksparseFixedSelfAttention(emb, k=k, t=context, **kwargs)
         elif attention_type == 'sparse2d':
-            self.attend = ReallySparseAttention(emb, context, n_heads=heads, **kwargs)
+            self.attend = ReallySparseAttention(emb, context, k=k, n_heads=heads, **kwargs)
         elif attention_type == 'native':
             self.attend = NativeAttention(heads, emb, context, **kwargs)
         elif attention_type == 'dilated':
             self.attend = DynamicDilatedAttention(shared_predictor, 
-                                                  emb, 
+                                                  emb,
+                                                  k=k,
                                                   layer=depth, 
                                                   n_heads=heads,
                                                   **kwargs)
         elif attention_type == 'entmax':
             self.attend = AlphaEntmax(heads, emb, context, **kwargs)
         elif attention_type == 'simple-sparse':
-            self.attend = NonadaptiveSparseAttention(emb, context, n_heads=heads, **kwargs)
+            self.attend = NonadaptiveSparseAttention(emb, context, k=k, n_heads=heads, **kwargs)
         elif attention_type == 'bigbird':
             cfg = BigBirdConfig(context, heads, emb, k, 1)
             self.attend = BigBirdBlockSparseAttention(cfg)
@@ -200,6 +209,7 @@ class EasyPosEmbedding(nn.Module):
         pos = pos[:, :, None]
         return torch.cat([seq, pos], dim=-1)
 
+
 class SparseTransformer(nn.Module):
     def __init__(self,
                  n_blocks: int,
@@ -212,6 +222,7 @@ class SparseTransformer(nn.Module):
                  *args,
                  **kwargs):
         super().__init__()
+        breakpoint()
         self.context_len = context_len
         self.vocab_size = vocab_size
         if pos_embedding == 'learned':
@@ -220,6 +231,9 @@ class SparseTransformer(nn.Module):
         elif pos_embedding == 'easy':
             self.token_embedding = nn.Embedding(num_embeddings=vocab_size, embedding_dim=emb-1)
             self.pos_embedding = EasyPosEmbedding()
+        elif pos_embedding == 'sinusoidal':
+            self.token_embedding = nn.Embedding(num_embeddings=vocab_size, embedding_dim=emb)
+            self.pos_embedding = Summer(PositionalEncoding1D(emb))
 
         if (attentions is not None and 'dilated' in attentions) or (attention_type == 'dilated'):
             self.shared_predictor = nn.Sequential(nn.Linear(1, 10),
