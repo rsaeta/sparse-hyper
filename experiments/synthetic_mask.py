@@ -126,6 +126,8 @@ def _train(args):
             batch_eyes = torch.arange(seqs_inputs.size(0))
             loss = F.cross_entropy(logits[batch_eyes, mask, :], targets[batch_eyes, mask], reduction='mean')
             to_log = {'val_loss': loss.item()}
+            if 'WANDB_MODE' in os.environ:
+                print(to_log)
             wandb.log(to_log)
 
         if args.save_dir is not None and i % args.save_every == 0:

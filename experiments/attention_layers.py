@@ -148,6 +148,7 @@ class OneDimensionalSparseAttenion(nn.Module):
                                            rng=(context,),
                                            relative_range=(2,),
                                            cuda='cuda' in util.d(x))  # (B, C, P, 1)
+        breakpoint()
         assert ((indices < 0).sum().item() == 0) and ((indices >= context).sum().item() == 0), \
             f'Found some indices out of bounds: indices < 0: {(indices < 0).sum().item()}; ' \
             f'indices >= {context}: {(indices >= context).sum().item()}'
@@ -379,13 +380,15 @@ class NonadaptiveSparseAttention(OneDimensionalSparseAttenion):
                  gadditional: int = 2,
                  nadditional: int = 2,
                  mask: bool = True,
-                 sigma_scale: float = 1.):
+                 sigma_scale: float = 1.,
+                 transformation_method: str = 'sigmoid'):
         super().__init__(emb, n_heads, k=k, gadditional=gadditional, nadditional=nadditional)
         self.pmeans = torch.nn.Parameter(torch.rand((context_len, k, 1)))
         self.psigmas = torch.nn.Parameter(torch.rand((context_len, k)))
         # Non-learnabe 
         self.register_buffer('pvalues', torch.ones(k))
         self.sigma_scale = sigma_scale
+        self.transformation_method = transformation_method
 
     def hyper(self, x: torch.Tensor):
         b, c, e = x.size()
@@ -394,9 +397,83 @@ class NonadaptiveSparseAttention(OneDimensionalSparseAttenion):
         sigmas = self.psigmas[None, :, :].expand(b, c, k)
         values = self.pvalues[None, None, :].expand(b, c, k)
 
-        means = sparse.transform_means(means, (c,))
+        means = sparse.transform_means(means, (c,), method=self.transformation_method)
         sigmas = sparse.transform_sigmas(sigmas, (c,)) * self.sigma_scale
 
+        return means, sigmas, values
+
+
+class UnknowingSparseAttention(OneDimensionalSparseAttenion):
+    def __init__(self,
+                 emb: int,
+                 context_len: int,
+                 *,
+                 k: int = 8,
+                 hidden: int = 4,
+                 n_heads: int = 4,
+                 gadditional: int = 2,
+                 nadditional: int = 2,
+                 mask: bool = True,
+                 sigma_scale: float = 1.,
+                 transformation_method: str = 'modulo'):
+        k = 1
+        super().__init__(emb, n_heads, k=k, gadditional=gadditional, nadditional=nadditional)
+
+        self.pmeans = torch.rand((context_len, k, 1), device='cuda')
+        self.pmeans[45, 0, 0] = 112.
+
+        self.psigmas = torch.nn.Parameter(torch.rand((context_len, k)))
+        # Non-learnabe
+        self.register_buffer('pvalues', torch.ones(k))
+        self.sigma_scale = sigma_scale
+        self.transformation_method = transformation_method
+
+    def hyper(self, x: torch.Tensor):
+        b, c, e = x.size()
+        k = self.k
+        means  = self.pmeans[None, :, :, :].expand(b, c, k, 1)
+        sigmas = self.psigmas[None, :, :].expand(b, c, k)
+        values = self.pvalues[None, None, :].expand(b, c, k)
+
+        means = sparse.transform_means(means, (c,), method=self.transformation_method)
+        sigmas = sparse.transform_sigmas(sigmas, (c,)) * self.sigma_scale
+        return means, sigmas, values
+
+
+class KnowingSparseAttention(OneDimensionalSparseAttenion):
+    def __init__(self,
+                 emb: int,
+                 context_len: int,
+                 *,
+                 k: int = 8,
+                 hidden: int = 4,
+                 n_heads: int = 4,
+                 gadditional: int = 2,
+                 nadditional: int = 2,
+                 mask: bool = True,
+                 sigma_scale: float = 1.,
+                 transformation_method: str = 'modulo'):
+        k = 1
+        super().__init__(emb, n_heads, k=k, gadditional=gadditional, nadditional=nadditional)
+
+        self.pmeans = torch.rand((context_len, k, 1), device='cuda')
+        self.pmeans[45, 0, 0] = 115.
+
+        self.psigmas = torch.nn.Parameter(torch.rand((context_len, k)))
+        # Non-learnabe
+        self.register_buffer('pvalues', torch.ones(k))
+        self.sigma_scale = sigma_scale
+        self.transformation_method = transformation_method
+
+    def hyper(self, x: torch.Tensor):
+        b, c, e = x.size()
+        k = self.k
+        means  = self.pmeans[None, :, :, :].expand(b, c, k, 1)
+        sigmas = self.psigmas[None, :, :].expand(b, c, k)
+        values = self.pvalues[None, None, :].expand(b, c, k)
+
+        means = sparse.transform_means(means, (c,), method=self.transformation_method)
+        sigmas = sparse.transform_sigmas(sigmas, (c,)) * self.sigma_scale
         return means, sigmas, values
 
 
