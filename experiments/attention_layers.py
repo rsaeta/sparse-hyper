@@ -148,7 +148,6 @@ class OneDimensionalSparseAttenion(nn.Module):
                                            rng=(context,),
                                            relative_range=(2,),
                                            cuda='cuda' in util.d(x))  # (B, C, P, 1)
-        breakpoint()
         assert ((indices < 0).sum().item() == 0) and ((indices >= context).sum().item() == 0), \
             f'Found some indices out of bounds: indices < 0: {(indices < 0).sum().item()}; ' \
             f'indices >= {context}: {(indices >= context).sum().item()}'
