@@ -125,7 +125,8 @@ def _train(args):
             logits = model(seqs_inputs, attention_masks)
             batch_eyes = torch.arange(seqs_inputs.size(0))
             loss = F.cross_entropy(logits[batch_eyes, mask, :], targets[batch_eyes, mask], reduction='mean')
-            to_log = {'val_loss': loss.item()}
+            accuracy = (logits.argmax(dim=-1)[batch_eyes, mask] == targets[batch_eyes, mask]).float().mean()
+            to_log = {'val_loss': loss.item(), 'accuracy': accuracy.item()}
             if 'WANDB_MODE' in os.environ:
                 print(to_log)
             wandb.log(to_log)

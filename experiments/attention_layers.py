@@ -589,16 +589,15 @@ class EasySlidingWindowAttention(MultiHeadAttention):
 class NativeAttention(nn.Module):
     def __init__(self, num_heads, emb, context, mask, **kwargs):
         super().__init__()
+        self.num_heads = num_heads
         self.mask = mask
-        self.native_attention = nn.MultiheadAttention(emb, num_heads)
+        self.native_attention = nn.MultiheadAttention(emb, num_heads, batch_first=True)
     
-    def forward(self, x: Tensor) -> Tensor:
-        if self.mask:
-            mask = torch.nn.Transformer.generate_square_subsequent_mask(None, x.size(1)).to(util.d(x))
-            out, _ = self.native_attention(x.transpose(0, 1), x.transpose(0, 1), x.transpose(0, 1), attn_mask=mask)
-        else:
-            out, _ = self.native_attention(x.transpose(0, 1), x.transpose(0, 1), x.transpose(0, 1))
-        return out.transpose(0, 1)
+    def forward(self, x: Tensor, attention_mask: Tensor) -> Tensor:
+        b, c, e = attention_mask.shape
+        expanded = attention_mask[:, None, :, :].expand(b, self.num_heads, c, e).reshape(b * self.num_heads, c, e)
+        out, _ = self.native_attention(x, x, x, attn_mask=expanded.float())
+        return out
 
 
 class AlphaEntmax(nn.Module):
