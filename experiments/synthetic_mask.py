@@ -37,6 +37,8 @@ def init_wandb(args):
             'gitsha': git.Repo(dir_path, search_parent_directories=True).head.object.hexsha,
             'model_type': args.model_type,
             'dir_path': dir_path,
+            'random_data': args.rand_data,
+            'random_seed': args.seed,
         }
     )
 
