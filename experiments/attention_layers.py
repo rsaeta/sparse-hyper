@@ -1,3 +1,5 @@
+from random import random
+
 import torch
 from torch import nn, Tensor
 import wandb
@@ -456,7 +458,8 @@ class KnowingSparseAttention(OneDimensionalSparseAttenion):
         super().__init__(emb, n_heads, k=k, gadditional=gadditional, nadditional=nadditional)
 
         self.pmeans = torch.rand((context_len, k, 1), device='cuda')
-        self.pmeans[45, 0, 0] = 115.
+        for i in range(45, 55):
+            self.pmeans[i, 0, 0] = i + 70
 
         self.psigmas = torch.nn.Parameter(torch.rand((context_len, k)))
         # Non-learnabe
@@ -547,7 +550,7 @@ class Head(nn.Module):
         q = self.query(x) # (B,T,hs)
         # compute attention scores ("affinities")
         wei = q @ k.transpose(-2,-1) * k.shape[-1]**-0.5 # (B, T, hs) @ (B, hs, T) -> (B, T, T)
-        wei = wei.masked_fill(~attention_mask, float('-inf'))  # (B, T, T)
+        wei = wei.masked_fill(~attention_mask.bool(), float('-inf'))  # (B, T, T)
         wei = torch.nn.functional.softmax(wei, dim=-1) # (B, T, T)
         wei = self.dropout(wei)
         # perform the weighted aggregation of the values
@@ -596,7 +599,7 @@ class NativeAttention(nn.Module):
     def forward(self, x: Tensor, attention_mask: Tensor) -> Tensor:
         b, c, e = attention_mask.shape
         expanded = attention_mask[:, None, :, :].expand(b, self.num_heads, c, e).reshape(b * self.num_heads, c, e)
-        out, _ = self.native_attention(x, x, x, attn_mask=expanded.float())
+        out, weights = self.native_attention(x, x, x, attn_mask=expanded.float(), need_weights=True)
         return out
 
 

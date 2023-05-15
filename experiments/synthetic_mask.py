@@ -41,6 +41,27 @@ def init_wandb(args):
     )
 
 
+def random_sample_data(batch_size, seq_len, offset=70):
+    seqs_inputs = torch.randint(size=(batch_size, seq_len), low=100, high=32000)
+    attention_masks = torch.ones_like(seqs_inputs)
+    mask_token = 4
+    mask = (torch.arange(0, 10) + 45)[None, :].expand(batch_size, -1)
+    targets = seqs_inputs.detach().clone()
+    # Modify the input so that the masked token positions are filled with [MASK] tokens
+    # and the token at position mask + offset is the target token.
+    for b, m_i in enumerate(mask):
+        for j in m_i:
+            seqs_inputs[b] = apply_offset_mask(seqs_inputs[b], j, mask_token, offset)
+    # Expand the attention mask to a symmetric matrix
+    attention_masks = attention_masks[:, None, :].expand(-1, seq_len, -1)
+    if cuda:
+        seqs_inputs = seqs_inputs.cuda()
+        attention_masks = attention_masks.cuda()
+        targets = targets.cuda()
+        mask = mask.cuda()
+    return seqs_inputs, attention_masks, targets, mask
+
+
 def simple_sample_data(data, tokenizer, batch_size, seq_len, offset=70):
     """
     This function takes the whole dataset as a sequence in data and samples a batch of
@@ -51,8 +72,8 @@ def simple_sample_data(data, tokenizer, batch_size, seq_len, offset=70):
     be able to see the target.
     """
     mask_token = tokenizer.token_to_id('[MASK]')
-    starts = torch.randint(size=(batch_size,), low=0, high=data.size(0) - seq_len*4)
-    strs = [ttos(data[start:start + seq_len*4]) for start in starts]
+    starts = torch.randint(size=(batch_size,), low=0, high=data.size(0) - seq_len * 4)
+    strs = [ttos(data[start:start + seq_len * 4]) for start in starts]
     encoded_ids = []
     attention_masks = []
     for s in strs:
@@ -67,7 +88,8 @@ def simple_sample_data(data, tokenizer, batch_size, seq_len, offset=70):
     # Modify the input so that the masked token positions are filled with [MASK] tokens
     # and the token at position mask + offset is the target token.
     for b, m_i in enumerate(mask):
-        seqs_inputs[b] = apply_offset_mask(seqs_inputs[b], m_i, mask_token, offset)
+        for j in range(10):
+            seqs_inputs[b] = apply_offset_mask(seqs_inputs[b], m_i + j, mask_token, offset)
     # Expand the attention mask to a symmetric matrix
     attention_masks = attention_masks[:, None, :].expand(-1, seq_len, -1)
     if cuda:
@@ -102,15 +124,28 @@ def _train(args):
     for i in range(args.num_batches):
         model.train()
         optimizer.zero_grad()
-        seqs_inputs, attention_masks, targets, mask = simple_sample_data(data_train, tokenizer, args.batch_size,
-                                                                         args.context)
+        if args.rand_data:
+            seqs_inputs, attention_masks, targets, mask = random_sample_data(args.batch_size, args.context)
+            # breakpoint()
+        else:
+            seqs_inputs, attention_masks, targets, mask = simple_sample_data(data_train, tokenizer, args.batch_size,
+                                                                             args.context)
         logits = model(seqs_inputs, attention_masks)
-        batch_eyes = torch.arange(seqs_inputs.size(0))
-        loss = F.cross_entropy(logits[batch_eyes, mask, :], targets[batch_eyes, mask], reduction='mean')
+        # batch_eyes = torch.arange(seqs_inputs.size(0))
+        # breakpoint()
+        #loss3 = F.cross_entropy(logits[batch_eyes, mask[0], :], targets[batch_eyes, mask[0]], reduction='mean')
+
+        gathered_outputs = torch.gather(logits, dim=1, index=mask.unsqueeze(-1).repeat(1, 1, logits.size(-1)))
+        gathered_targets = torch.gather(targets, dim=1, index=mask)
+        loss2 = F.cross_entropy(gathered_outputs.view(-1, logits.size(-1)), gathered_targets.view(-1), reduction='mean')
+        loss = F.cross_entropy(torch.index_select(logits, 1, mask[0]).view(-1, logits.size(-1)),
+                               torch.index_select(targets, 1, mask[0]).view(-1),
+                               reduction='mean')
+
         if i % args.log_every == 0:
             to_log = {'loss': loss.item(), 'tokens_seen': tokens_seen}
             if 'WANDB_MODE' in os.environ:
-                print(to_log)
+                print(to_log, loss2.item())
             wandb.log(to_log, step=i)
         loss.backward()
         torch.nn.utils.clip_grad_norm_(model.parameters(), args.clipping_value)

@@ -117,6 +117,7 @@ def parse_args() -> Namespace:
     parser.add_argument('--finetune-epochs', dest='finetune_epochs', default=5, type=int)
     parser.add_argument('--pos-embedding', dest='pos_embedding', default='learned', type=str,
                         choices=get_args(pos_encodings))
+    parser.add_argument('--rand-data', dest='rand_data', action='store_true')
     options = parser.parse_args()
     return options
 
