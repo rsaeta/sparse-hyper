@@ -111,7 +111,7 @@ def _train(args):
             to_log = {'loss': loss.item(), 'tokens_seen': tokens_seen}
             if 'WANDB_MODE' in os.environ:
                 print(to_log)
-            wandb.log(to_log)
+            wandb.log(to_log, step=i)
         loss.backward()
         torch.nn.utils.clip_grad_norm_(model.parameters(), args.clipping_value)
         optimizer.step()
@@ -129,7 +129,7 @@ def _train(args):
             to_log = {'val_loss': loss.item(), 'accuracy': accuracy.item()}
             if 'WANDB_MODE' in os.environ:
                 print(to_log)
-            wandb.log(to_log)
+            wandb.log(to_log, step=i)
 
         if args.save_dir is not None and i % args.save_every == 0:
             save_model(args, model, optimizer, scheduler, i // args.save_every)
