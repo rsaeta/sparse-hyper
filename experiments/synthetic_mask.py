@@ -155,12 +155,18 @@ def _train(args):
 
         if i % args.validation_every == 0:
             model.eval()
-            seqs_inputs, attention_masks, targets, mask = simple_sample_data(data_val, tokenizer, args.batch_size,
-                                                                             args.context)
+            if args.rand_data:
+                seqs_inputs, attention_masks, targets, mask = random_sample_data(args.batch_size, args.context)
+            else:
+                seqs_inputs, attention_masks, targets, mask = simple_sample_data(data_val, tokenizer, args.batch_size,
+                                                                                 args.context)
             logits = model(seqs_inputs, attention_masks)
-            batch_eyes = torch.arange(seqs_inputs.size(0))
-            loss = F.cross_entropy(logits[batch_eyes, mask, :], targets[batch_eyes, mask], reduction='mean')
-            accuracy = (logits.argmax(dim=-1)[batch_eyes, mask] == targets[batch_eyes, mask]).float().mean()
+            loss = F.cross_entropy(torch.index_select(logits, 1, mask[0]).view(-1, logits.size(-1)),
+                                   torch.index_select(targets, 1, mask[0]).view(-1),
+                                   reduction='mean')
+
+            accuracy = (torch.index_select(logits, 1, mask[0]).view(-1, logits.size(-1)).argmax(dim=-1) ==
+                        torch.index_select(targets, 1, mask[0]).view(-1)).float().mean()
             to_log = {'val_loss': loss.item(), 'accuracy': accuracy.item()}
             if 'WANDB_MODE' in os.environ:
                 print(to_log)
