@@ -16,7 +16,7 @@ except:
     supports_dyno = False
 from functools import partial
 
-from transformer_models import GeneratingTransformer
+from transformer_models import GeneratingTransformer, NativeTransformer
 from argparse import Namespace, ArgumentParser
 from tokenizers import BertWordPieceTokenizer
 
@@ -132,6 +132,13 @@ def get_model(args: Namespace, vocab_size: int, mask: bool = False) -> Generatin
         attentions = None
     elif args.model_type == 'dabirds':
         attentions = [*['bigbird']*10, *['smallbird']*6]
+    elif args.model_type == 'native':
+        return NativeTransformer(
+            args.embedding,
+            args.n_heads,
+            depth=args.depth,
+            context=args.context
+        ).to(device)
     else:
         attentions = None if args.model_type is None else [
             'dilated',

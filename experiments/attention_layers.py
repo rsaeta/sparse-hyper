@@ -144,6 +144,7 @@ class OneDimensionalSparseAttenion(nn.Module):
         means, sigmas, values = self.hyper(x)  # (B, C, k, 1); (B, C, k, 1); (B, C, k)
         batch, context, emb = x.size()  # (B, C, E)
         rank = means.size(-1)
+        # breakpoint()
         indices: Tensor = sparse.ngenerate(means,
                                            self.gadditional,
                                            self.nadditional,
@@ -209,8 +210,9 @@ class OneDimensionalSparseAttenion(nn.Module):
         indices2 = torch.cat([batch_is[:, None], indices.view(-1, 2)], dim=-1)
         dot = util.calc_vals(Q, K.transpose(-2, -1), indices2).view(batch2, -1)
         dot = sparse.logsoftmax(indices, weights * dot, (context, context)).exp()
-        out = sparse.batchmm(indices, dot, size=(context, context), xmatrix=V)
-        out = out.transpose(1, 2).contiguous().view(batch, context, self.n_heads * emb)
+        out = sparse.batchmm(indices, dot, size=(context, context), xmatrix=V)  # [B * H, C, E]
+        # out = out.transpose(1, 2).contiguous().view(batch, context, self.n_heads * emb)  # [B, C, H * E]
+        out = out.view(batch, context, self.n_heads*emb)
         return self.unify(out)
 
 
