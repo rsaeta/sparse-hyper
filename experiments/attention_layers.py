@@ -146,10 +146,10 @@ class OneDimensionalSparseAttenion(nn.Module):
         rank = means.size(-1)
         # breakpoint()
         indices: Tensor = sparse.ngenerate(means,
-                                           self.gadditional,
-                                           self.nadditional,
+                                           self.gadditional if self.training else 0,  # For evaluation, only get nearest
+                                           self.nadditional if self.training else 0,  # index for each point
                                            rng=(context,),
-                                           relative_range=(2,),
+                                           relative_range=(3,),
                                            cuda='cuda' in util.d(x))  # (B, C, P, 1)
         assert ((indices < 0).sum().item() == 0) and ((indices >= context).sum().item() == 0), \
             f'Found some indices out of bounds: indices < 0: {(indices < 0).sum().item()}; ' \
