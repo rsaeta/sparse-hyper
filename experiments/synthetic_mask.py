@@ -47,13 +47,14 @@ def random_sample_data(batch_size, seq_len, offset=70):
     seqs_inputs = torch.randint(size=(batch_size, seq_len), low=100, high=32000)
     attention_masks = torch.ones_like(seqs_inputs)
     mask_token = 4
-    mask = (torch.arange(0, 10) + 45)[None, :].expand(batch_size, -1)
+    mask = torch.ones((batch_size, seq_len))
+    mask[:, 45:55] = 0
+    mask = mask.bool()
     targets = seqs_inputs.detach().clone()
     # Modify the input so that the masked token positions are filled with [MASK] tokens
     # and the token at position mask + offset is the target token.
-    for b, m_i in enumerate(mask):
-        for j in m_i:
-            seqs_inputs[b] = apply_offset_mask(seqs_inputs[b], j, mask_token, offset)
+    for b, m_i in (~mask).nonzero():
+        seqs_inputs[b] = apply_offset_mask(seqs_inputs[b], m_i, mask_token, offset)
     # Expand the attention mask to a symmetric matrix
     attention_masks = attention_masks[:, None, :].expand(-1, seq_len, -1)
     if cuda:
@@ -128,26 +129,19 @@ def _train(args):
         optimizer.zero_grad()
         if args.rand_data:
             seqs_inputs, attention_masks, targets, mask = random_sample_data(args.batch_size, args.context)
-            # breakpoint()
         else:
             seqs_inputs, attention_masks, targets, mask = simple_sample_data(data_train, tokenizer, args.batch_size,
                                                                              args.context)
         logits = model(seqs_inputs, attention_masks)
-        # batch_eyes = torch.arange(seqs_inputs.size(0))
-        # breakpoint()
-        #loss3 = F.cross_entropy(logits[batch_eyes, mask[0], :], targets[batch_eyes, mask[0]], reduction='mean')
-
-        gathered_outputs = torch.gather(logits, dim=1, index=mask.unsqueeze(-1).repeat(1, 1, logits.size(-1)))
-        gathered_targets = torch.gather(targets, dim=1, index=mask)
-        loss2 = F.cross_entropy(gathered_outputs.view(-1, logits.size(-1)), gathered_targets.view(-1), reduction='mean')
-        loss = F.cross_entropy(torch.index_select(logits, 1, mask[0]).view(-1, logits.size(-1)),
-                               torch.index_select(targets, 1, mask[0]).view(-1),
-                               reduction='mean')
-
+        num_classes = logits.size(-1)
+        flattened_logits = logits.view(-1, num_classes)
+        flattened_targets = targets.view(-1)
+        flat_mask_idx = (~mask).view(-1).nonzero().view(-1)
+        loss = F.cross_entropy(flattened_logits[flat_mask_idx], flattened_targets[flat_mask_idx], reduction='mean')
         if i % args.log_every == 0:
-            to_log = {'loss': loss.item(), 'tokens_seen': tokens_seen}
+            to_log = {'loss': loss.item(), 'tokens_seen': tokens_seen, 'lr': scheduler.get_last_lr()[0]}
             if 'WANDB_MODE' in os.environ:
-                print(to_log, loss2.item())
+                print(to_log)
             wandb.log(to_log, step=i)
         loss.backward()
         torch.nn.utils.clip_grad_norm_(model.parameters(), args.clipping_value)
@@ -163,13 +157,21 @@ def _train(args):
                 seqs_inputs, attention_masks, targets, mask = simple_sample_data(data_val, tokenizer, args.batch_size,
                                                                                  args.context)
             logits = model(seqs_inputs, attention_masks)
+            num_classes = logits.size(-1)
+            flattened_logits = logits.view(-1, num_classes)
+            flattened_targets = targets.view(-1)
+            flat_mask_idx = (~mask).view(-1).nonzero().view(-1)
+            loss = F.cross_entropy(flattened_logits[flat_mask_idx], flattened_targets[flat_mask_idx], reduction='mean')
+
+            """
             loss = F.cross_entropy(torch.index_select(logits, 1, mask[0]).view(-1, logits.size(-1)),
                                    torch.index_select(targets, 1, mask[0]).view(-1),
                                    reduction='mean')
 
             accuracy = (torch.index_select(logits, 1, mask[0]).view(-1, logits.size(-1)).argmax(dim=-1) ==
                         torch.index_select(targets, 1, mask[0]).view(-1)).float().mean()
-            to_log = {'val_loss': loss.item(), 'accuracy': accuracy.item()}
+            """
+            to_log = {'val_loss': loss.item()}
             if 'WANDB_MODE' in os.environ:
                 print(to_log)
             wandb.log(to_log, step=i)
