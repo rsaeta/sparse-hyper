@@ -208,6 +208,7 @@ class OneDimensionalSparseAttenion(nn.Module):
         batch2, np, _ = indices.shape
         batch_is = torch.arange(batch2, dtype=torch.long, device=util.d(x))[None, :].expand(np, -1).t().reshape(-1)
         indices2 = torch.cat([batch_is[:, None], indices.view(-1, 2)], dim=-1)
+        # breakpoint()
         dot = util.calc_vals(Q, K.transpose(-2, -1), indices2).view(batch2, -1)
         dot = sparse.logsoftmax(indices, weights * dot, (context, context)).exp()
         out = sparse.batchmm(indices, dot, size=(context, context), xmatrix=V)  # [B * H, C, E]
@@ -459,8 +460,8 @@ class KnowingSparseAttention(OneDimensionalSparseAttenion):
         k = 1
         super().__init__(emb, n_heads, k=k, gadditional=gadditional, nadditional=nadditional)
 
-        self.pmeans = torch.rand((context_len, k, 1), device='cuda')
-        for i in range(45, 55):
+        self.pmeans = torch.randint(100, 32000, (context_len, k, 1), device='cuda')
+        for i in range(45, 105):
             self.pmeans[i, 0, 0] = i + 70
 
         self.psigmas = torch.nn.Parameter(torch.rand((context_len, k)))

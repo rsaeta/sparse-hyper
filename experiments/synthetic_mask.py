@@ -48,7 +48,7 @@ def random_sample_data(batch_size, seq_len, offset=70):
     attention_masks = torch.ones_like(seqs_inputs)
     mask_token = 4
     mask = torch.ones((batch_size, seq_len))
-    mask[:, 45:55] = 0
+    mask[:, 45:105] = 0
     mask = mask.bool()
     targets = seqs_inputs.detach().clone()
     # Modify the input so that the masked token positions are filled with [MASK] tokens
