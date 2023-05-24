@@ -1096,7 +1096,7 @@ def enwik8(path, n_train=int(90e6), n_valid=int(5e6), n_test=int(5e6)):
 
 def go(arg):
 
-    util.makedirs('./transformer-plots/')
+    util.makedirs('./models-plots/')
 
     if arg.seed < 0:
         seed = random.randint(0, 1000000)
@@ -1170,7 +1170,7 @@ def go(arg):
         loss = F.nll_loss(output.transpose(2, 1), target, reduction='none')
         loss = loss.mean()
 
-        tbw.add_scalar('transformer/train-loss', float(loss.item()) * LOG2E, i * arg.batch_size)
+        tbw.add_scalar('models/train-loss', float(loss.item()) * LOG2E, i * arg.batch_size)
 
         assert loss.item() == loss.item(), f'Loss is nan {loss}'
 
@@ -1218,7 +1218,7 @@ def go(arg):
                 plt.xlim((-MARGIN * (shape[0] - 1), (shape[0] - 1) * (1.0 + MARGIN)))
                 plt.ylim((-MARGIN * (shape[0] - 1), (shape[0] - 1) * (1.0 + MARGIN)))
 
-                plt.savefig(f'./transformer-plots/means{i:06}.{t}.pdf')
+                plt.savefig(f'./models-plots/means{i:06}.{t}.pdf')
 
         if i != 0 and (i % arg.test_every == 0 or i == arg.num_batches - 1):
 
@@ -1272,7 +1272,7 @@ def go(arg):
                 print(f'epoch{i}: {bits_per_byte:.4} bits per byte')
                 # print(f'epoch{i}: {bits:.4} total bits')
 
-                tbw.add_scalar(f'transformer/eval-loss', bits_per_byte, i * arg.batch_size)
+                tbw.add_scalar(f'models/eval-loss', bits_per_byte, i * arg.batch_size)
 
                 # Generate from seed
                 GENSIZE = 600
@@ -1331,7 +1331,7 @@ if __name__ == "__main__":
 
     parser.add_argument("-k", "--num-points",
                         dest="k",
-                        help="Number of index tuples per output in the sparse transformer.",
+                        help="Number of index tuples per output in the sparse models.",
                         default=32, type=int)
 
     parser.add_argument("--k-conv",

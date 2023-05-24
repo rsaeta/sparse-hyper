@@ -10,8 +10,7 @@ import torch
 import torch.nn.functional as F
 import wandb
 
-from mlm_utils import ttos
-from experiment_utils import (
+from utils import (
     cuda,
     get_tokenizer,
     get_model,
@@ -20,7 +19,6 @@ from experiment_utils import (
     learners,
     save_model,
 )
-from mlm_components import enwik8
 
 
 def init_wandb(args):
@@ -88,44 +86,6 @@ def random_sample_data(batch_size, seq_len, offset=70):
     return seqs_inputs, attention_masks, targets, mask
 
 
-def simple_sample_data(data, tokenizer, batch_size, seq_len, offset=70):
-    """
-    This function takes the whole dataset as a sequence in data and samples a batch of
-    sequences of length seq_len. The sequences are sampled from the dataset randomly
-    and the masked token is also sampled randomly within each sequence. The value of the masked
-    token is then placed +offset from the masked token in the sequence. Therefore, a convolutional
-    model will not be able to see the actual target while the adaptive receptive field model will
-    be able to see the target.
-    """
-    mask_token = tokenizer.token_to_id('[MASK]')
-    starts = torch.randint(size=(batch_size,), low=0, high=data.size(0) - seq_len * 4)
-    strs = [ttos(data[start:start + seq_len * 4]) for start in starts]
-    encoded_ids = []
-    attention_masks = []
-    for s in strs:
-        encoded = tokenizer.encode(s)
-        encoded_ids.append(encoded.ids[:seq_len])
-        attention_mask = [1] * seq_len
-        attention_masks.append(attention_mask)
-    seqs_inputs = torch.tensor(encoded_ids)
-    attention_masks = torch.tensor(attention_masks).bool()
-    mask = torch.ones(size=(batch_size,)).long() * 45
-    targets = seqs_inputs.detach().clone()
-    # Modify the input so that the masked token positions are filled with [MASK] tokens
-    # and the token at position mask + offset is the target token.
-    for b, m_i in enumerate(mask):
-        for j in range(10):
-            seqs_inputs[b] = apply_offset_mask(seqs_inputs[b], m_i + j, mask_token, offset)
-    # Expand the attention mask to a symmetric matrix
-    attention_masks = attention_masks[:, None, :].expand(-1, seq_len, -1)
-    if cuda:
-        seqs_inputs = seqs_inputs.cuda()
-        attention_masks = attention_masks.cuda()
-        targets = targets.cuda()
-        mask = mask.cuda()
-    return seqs_inputs, attention_masks, targets, mask
-
-
 def apply_offset_mask(seq_input, i, mask_token, offset):
     """
     This function replaces seq_input[i] with the mask_token and replaces
@@ -141,7 +101,6 @@ def apply_offset_mask(seq_input, i, mask_token, offset):
 def _train(args):
     setup(args)
     tokenizer = get_tokenizer(args)
-    data_train, data_val, data_test = enwik8(args.data)
     model = get_model(args, tokenizer.get_vocab_size())
     optimizer, scheduler = learners(model, args)
     tokens_seen = 0
@@ -150,11 +109,7 @@ def _train(args):
     for i in range(args.num_batches):
         model.train()
         optimizer.zero_grad()
-        if args.rand_data:
-            seqs_inputs, attention_masks, targets, mask = random_sample_data2(args.batch_size, args.context)
-        else:
-            seqs_inputs, attention_masks, targets, mask = simple_sample_data(data_train, tokenizer, args.batch_size,
-                                                                             args.context)
+        seqs_inputs, attention_masks, targets, mask = random_sample_data2(args.batch_size, args.context)
         logits = model(seqs_inputs, attention_masks)
         num_classes = logits.size(-1)
         flattened_logits = logits.view(-1, num_classes)
@@ -174,26 +129,13 @@ def _train(args):
 
         if i % args.validation_every == 0:
             model.eval()
-            if args.rand_data:
-                seqs_inputs, attention_masks, targets, mask = random_sample_data(args.batch_size, args.context)
-            else:
-                seqs_inputs, attention_masks, targets, mask = simple_sample_data(data_val, tokenizer, args.batch_size,
-                                                                                 args.context)
+            seqs_inputs, attention_masks, targets, mask = random_sample_data(args.batch_size, args.context)
             logits = model(seqs_inputs, attention_masks)
             num_classes = logits.size(-1)
             flattened_logits = logits.view(-1, num_classes)
             flattened_targets = targets.view(-1)
             flat_mask_idx = (~mask).view(-1).nonzero().view(-1)
             loss = F.cross_entropy(flattened_logits[flat_mask_idx], flattened_targets[flat_mask_idx], reduction='mean')
-
-            """
-            loss = F.cross_entropy(torch.index_select(logits, 1, mask[0]).view(-1, logits.size(-1)),
-                                   torch.index_select(targets, 1, mask[0]).view(-1),
-                                   reduction='mean')
-
-            accuracy = (torch.index_select(logits, 1, mask[0]).view(-1, logits.size(-1)).argmax(dim=-1) ==
-                        torch.index_select(targets, 1, mask[0]).view(-1)).float().mean()
-            """
             to_log = {'val_loss': loss.item()}
             if 'WANDB_MODE' in os.environ:
                 print(to_log)

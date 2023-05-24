@@ -1,0 +1,38 @@
+experiment:
+  type: simple_mlm
+  context_size: 256
+  data_source: synthetic
+  training:
+    batch_size: 32
+    optim:
+      type: adam
+      lr: 0.0001
+      betas: [0.9, 0.98]
+      eps: 1e-9
+      weight_decay: 0.0
+    scheduler:
+      type: linear
+      warmup_steps: 10000
+
+model:
+  type: non_native
+  embedding_dim: 64
+  context_size: ${experiment.context_size}
+  positional_encoding_type: sinusoidal
+  vocab_size: 32768
+  t_blocks:
+    - embedding_dim: ${model.embedding_dim}
+      ff_hidden_mult: 4
+      dropout: 0.0
+      attention:
+        attention_type: sparse
+        emb: ${model.embedding_dim}
+        heads: 4
+        context: ${experiment.context_size}
+        k: 2
+        gadditional: 8
+        nadditional: 3
+        sigma_scale: 1.0
+        transformation_method: modulo
+        hyper_hidden_dim: 128
+      repeat: 8

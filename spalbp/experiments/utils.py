@@ -27,14 +27,9 @@ except ImportError:
 
 from transformer_models import attention_types, pos_encodings
 
+
 cuda = torch.cuda.is_available()
 device = torch.device('cuda' if cuda else 'cpu')
-
-"""
-compile = torch.compile
-torch.set_float32_matmul_precision('high')
-torch._dynamo.config.suppress_errors = True
-"""
 
 
 def parse_args() -> Namespace:
@@ -62,7 +57,7 @@ def parse_args() -> Namespace:
                         help="Length of the sequences extracted from the corpus and the context used during inference.",
                         default=256, type=int)
     parser.add_argument("-d", "--depth",
-                        help="Depth of the network (nr. of transformer blocks)",
+                        help="Depth of the network (nr. of models blocks)",
                         default=12, type=int)
     parser.add_argument("-r", "--random-seed",
                         dest="seed",
