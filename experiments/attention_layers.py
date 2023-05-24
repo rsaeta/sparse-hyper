@@ -1,3 +1,5 @@
+from random import random
+
 import torch
 from torch import nn, Tensor
 import wandb
@@ -138,15 +140,16 @@ class OneDimensionalSparseAttenion(nn.Module):
     def hyper(self, x: torch.Tensor) -> Tuple[Tensor, Tensor, Tensor]:
         raise NotImplementedError("You gotta implement this yourself")
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
+    def forward(self, x: torch.Tensor, attention_mask: torch.Tensor) -> torch.Tensor:
         means, sigmas, values = self.hyper(x)  # (B, C, k, 1); (B, C, k, 1); (B, C, k)
         batch, context, emb = x.size()  # (B, C, E)
         rank = means.size(-1)
+        # breakpoint()
         indices: Tensor = sparse.ngenerate(means,
-                                           self.gadditional,
-                                           self.nadditional,
+                                           self.gadditional if self.training else 0,  # For evaluation, only get nearest
+                                           self.nadditional if self.training else 0,  # index for each point
                                            rng=(context,),
-                                           relative_range=(2,),
+                                           relative_range=(3,),
                                            cuda='cuda' in util.d(x))  # (B, C, P, 1)
         assert ((indices < 0).sum().item() == 0) and ((indices >= context).sum().item() == 0), \
             f'Found some indices out of bounds: indices < 0: {(indices < 0).sum().item()}; ' \
@@ -154,7 +157,7 @@ class OneDimensionalSparseAttenion(nn.Module):
         indices_fl = indices.float()
         # For each point (self.k), we expect to sample the 2**rank closest points from the first set of sampling,
         # then self.gadditional globally-sampled indices, and self.nadditional neighborhood-sampled indices.
-        num_points = self.k * (2 ** rank + self.gadditional + self.nadditional)
+        num_points = self.k * (2 ** rank + ((self.gadditional + self.nadditional) if self.training else 0))
         assert indices.size() == (batch, context, num_points, 1), f'Expected size {(batch, context, num_points, 1)}. ' \
                                                                   f'Got {indices.size()}'
         densities = sparse.densities(indices_fl, means, sigmas).clone()  # (B, C, P, self.k)
@@ -205,10 +208,12 @@ class OneDimensionalSparseAttenion(nn.Module):
         batch2, np, _ = indices.shape
         batch_is = torch.arange(batch2, dtype=torch.long, device=util.d(x))[None, :].expand(np, -1).t().reshape(-1)
         indices2 = torch.cat([batch_is[:, None], indices.view(-1, 2)], dim=-1)
+        # breakpoint()
         dot = util.calc_vals(Q, K.transpose(-2, -1), indices2).view(batch2, -1)
         dot = sparse.logsoftmax(indices, weights * dot, (context, context)).exp()
-        out = sparse.batchmm(indices, dot, size=(context, context), xmatrix=V)
-        out = out.transpose(1, 2).contiguous().view(batch, context, self.n_heads * emb)
+        out = sparse.batchmm(indices, dot, size=(context, context), xmatrix=V)  # [B * H, C, E]
+        # out = out.transpose(1, 2).contiguous().view(batch, context, self.n_heads * emb)  # [B, C, H * E]
+        out = out.view(batch, context, self.n_heads*emb)
         return self.unify(out)
 
 
@@ -379,13 +384,15 @@ class NonadaptiveSparseAttention(OneDimensionalSparseAttenion):
                  gadditional: int = 2,
                  nadditional: int = 2,
                  mask: bool = True,
-                 sigma_scale: float = 1.):
+                 sigma_scale: float = 1.,
+                 transformation_method: str = 'sigmoid'):
         super().__init__(emb, n_heads, k=k, gadditional=gadditional, nadditional=nadditional)
         self.pmeans = torch.nn.Parameter(torch.rand((context_len, k, 1)))
         self.psigmas = torch.nn.Parameter(torch.rand((context_len, k)))
         # Non-learnabe 
         self.register_buffer('pvalues', torch.ones(k))
         self.sigma_scale = sigma_scale
+        self.transformation_method = transformation_method
 
     def hyper(self, x: torch.Tensor):
         b, c, e = x.size()
@@ -394,9 +401,84 @@ class NonadaptiveSparseAttention(OneDimensionalSparseAttenion):
         sigmas = self.psigmas[None, :, :].expand(b, c, k)
         values = self.pvalues[None, None, :].expand(b, c, k)
 
-        means = sparse.transform_means(means, (c,))
+        means = sparse.transform_means(means, (c,), method=self.transformation_method)
         sigmas = sparse.transform_sigmas(sigmas, (c,)) * self.sigma_scale
 
+        return means, sigmas, values
+
+
+class UnknowingSparseAttention(OneDimensionalSparseAttenion):
+    def __init__(self,
+                 emb: int,
+                 context_len: int,
+                 *,
+                 k: int = 8,
+                 hidden: int = 4,
+                 n_heads: int = 4,
+                 gadditional: int = 2,
+                 nadditional: int = 2,
+                 mask: bool = True,
+                 sigma_scale: float = 1.,
+                 transformation_method: str = 'modulo'):
+        k = 1
+        super().__init__(emb, n_heads, k=k, gadditional=gadditional, nadditional=nadditional)
+
+        self.pmeans = torch.rand((context_len, k, 1), device='cuda')
+        self.pmeans[45, 0, 0] = 112.
+
+        self.psigmas = torch.nn.Parameter(torch.rand((context_len, k)))
+        # Non-learnabe
+        self.register_buffer('pvalues', torch.ones(k))
+        self.sigma_scale = sigma_scale
+        self.transformation_method = transformation_method
+
+    def hyper(self, x: torch.Tensor):
+        b, c, e = x.size()
+        k = self.k
+        means  = self.pmeans[None, :, :, :].expand(b, c, k, 1)
+        sigmas = self.psigmas[None, :, :].expand(b, c, k)
+        values = self.pvalues[None, None, :].expand(b, c, k)
+
+        means = sparse.transform_means(means, (c,), method=self.transformation_method)
+        sigmas = sparse.transform_sigmas(sigmas, (c,)) * self.sigma_scale
+        return means, sigmas, values
+
+
+class KnowingSparseAttention(OneDimensionalSparseAttenion):
+    def __init__(self,
+                 emb: int,
+                 context_len: int,
+                 *,
+                 k: int = 8,
+                 hidden: int = 4,
+                 n_heads: int = 4,
+                 gadditional: int = 2,
+                 nadditional: int = 2,
+                 mask: bool = True,
+                 sigma_scale: float = 1.,
+                 transformation_method: str = 'modulo'):
+        k = 1
+        super().__init__(emb, n_heads, k=k, gadditional=gadditional, nadditional=nadditional)
+
+        self.pmeans = torch.randint(100, 32000, (context_len, k, 1), device='cuda')
+        for i in range(45, 105):
+            self.pmeans[i, 0, 0] = i + 70
+
+        self.psigmas = torch.nn.Parameter(torch.rand((context_len, k)))
+        # Non-learnabe
+        self.register_buffer('pvalues', torch.ones(k))
+        self.sigma_scale = sigma_scale
+        self.transformation_method = transformation_method
+
+    def hyper(self, x: torch.Tensor):
+        b, c, e = x.size()
+        k = self.k
+        means  = self.pmeans[None, :, :, :].expand(b, c, k, 1)
+        sigmas = self.psigmas[None, :, :].expand(b, c, k)
+        values = self.pvalues[None, None, :].expand(b, c, k)
+
+        means = sparse.transform_means(means, (c,), method=self.transformation_method)
+        sigmas = sparse.transform_sigmas(sigmas, (c,)) * self.sigma_scale
         return means, sigmas, values
 
 
@@ -471,7 +553,7 @@ class Head(nn.Module):
         q = self.query(x) # (B,T,hs)
         # compute attention scores ("affinities")
         wei = q @ k.transpose(-2,-1) * k.shape[-1]**-0.5 # (B, T, hs) @ (B, hs, T) -> (B, T, T)
-        wei = wei.masked_fill(~attention_mask, float('-inf'))  # (B, T, T)
+        wei = wei.masked_fill(~attention_mask.bool(), float('-inf'))  # (B, T, T)
         wei = torch.nn.functional.softmax(wei, dim=-1) # (B, T, T)
         wei = self.dropout(wei)
         # perform the weighted aggregation of the values
@@ -485,6 +567,7 @@ class MultiHeadAttention(nn.Module):
 
     def __init__(self, num_heads, head_size, n_embd, block_size, dropout=0.0, **kwargs):
         super().__init__()
+        self.block_size = block_size
         self.heads = nn.ModuleList([Head(head_size, n_embd, block_size, **kwargs) for _ in range(num_heads)])
         self.proj = nn.Linear(head_size * num_heads, n_embd)
         self.dropout = nn.Dropout(dropout)
@@ -495,19 +578,32 @@ class MultiHeadAttention(nn.Module):
         return out
 
 
+class EasySlidingWindowAttention(MultiHeadAttention):
+
+    def forward(self, x: Tensor, attention_mask: Tensor):
+        c = x.shape[-2]
+        sliding_window_attn = torch.zeros((c, c), device=x.device)
+        r = torch.arange(c)
+        sliding_window_attn[r, torch.remainder(r + 1, c)] = 1  # forward attention
+        sliding_window_attn[r, torch.remainder(r - 1, c)] = 1  # backward attention
+        sliding_window_attn[r, torch.remainder(r, c)] = 1  # selfish attention
+        sliding_window_attn = sliding_window_attn.expand_as(attention_mask)
+        attention_mask = torch.logical_and(attention_mask, sliding_window_attn)
+        return super().forward(x, attention_mask)
+
+
 class NativeAttention(nn.Module):
     def __init__(self, num_heads, emb, context, mask, **kwargs):
         super().__init__()
+        self.num_heads = num_heads
         self.mask = mask
-        self.native_attention = nn.MultiheadAttention(emb, num_heads)
+        self.native_attention = nn.MultiheadAttention(emb, num_heads, batch_first=True)
     
-    def forward(self, x: Tensor) -> Tensor:
-        if self.mask:
-            mask = torch.nn.Transformer.generate_square_subsequent_mask(None, x.size(1)).to(util.d(x))
-            out, _ = self.native_attention(x.transpose(0, 1), x.transpose(0, 1), x.transpose(0, 1), attn_mask=mask)
-        else:
-            out, _ = self.native_attention(x.transpose(0, 1), x.transpose(0, 1), x.transpose(0, 1))
-        return out.transpose(0, 1)
+    def forward(self, x: Tensor, attention_mask: Tensor) -> Tensor:
+        b, c, e = attention_mask.shape
+        expanded = attention_mask[:, None, :, :].expand(b, self.num_heads, c, e).reshape(b * self.num_heads, c, e)
+        out, weights = self.native_attention(x, x, x, attn_mask=expanded.float(), need_weights=True)
+        return out
 
 
 class AlphaEntmax(nn.Module):

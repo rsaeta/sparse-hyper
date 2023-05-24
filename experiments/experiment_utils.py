@@ -16,7 +16,7 @@ except:
     supports_dyno = False
 from functools import partial
 
-from transformer_models import GeneratingTransformer
+from transformer_models import GeneratingTransformer, NativeTransformer
 from argparse import Namespace, ArgumentParser
 from tokenizers import BertWordPieceTokenizer
 
@@ -25,7 +25,7 @@ try:
 except ImportError:
     from typing_extensions import get_args
 
-from transformer_models import attention_types
+from transformer_models import attention_types, pos_encodings
 
 cuda = torch.cuda.is_available()
 device = torch.device('cuda' if cuda else 'cpu')
@@ -115,6 +115,9 @@ def parse_args() -> Namespace:
     parser.add_argument('--production', action='store_true', dest='production')
     parser.add_argument('--finetune-subset', dest='finetune_subset', default=-1, type=int)
     parser.add_argument('--finetune-epochs', dest='finetune_epochs', default=5, type=int)
+    parser.add_argument('--pos-embedding', dest='pos_embedding', default='learned', type=str,
+                        choices=get_args(pos_encodings))
+    parser.add_argument('--rand-data', dest='rand_data', action='store_true')
     options = parser.parse_args()
     return options
 
@@ -129,6 +132,13 @@ def get_model(args: Namespace, vocab_size: int, mask: bool = False) -> Generatin
         attentions = None
     elif args.model_type == 'dabirds':
         attentions = [*['bigbird']*10, *['smallbird']*6]
+    elif args.model_type == 'native':
+        return NativeTransformer(
+            args.embedding,
+            args.n_heads,
+            depth=args.depth,
+            context=args.context
+        ).to(device)
     else:
         attentions = None if args.model_type is None else [
             'dilated',
@@ -156,6 +166,7 @@ def get_model(args: Namespace, vocab_size: int, mask: bool = False) -> Generatin
         attention_type=args.attention_type,
         attentions=attentions,
         mask=mask,
+        pos_embedding=args.pos_embedding,
     )
     if args.load_model is not None:
         state_dict = torch.load(args.load_model, map_location=torch.device('cuda')

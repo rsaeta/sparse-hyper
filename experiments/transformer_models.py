@@ -6,16 +6,23 @@ from sparse import util
 from bigbird import BigBirdBlockSparseAttention, BigBirdConfig
 from smallbird import SmallBirdSparseAttention, SmallBirdConfig
 from smallest_bird import SmallerBirdConfig, SmallerBirdSparseAttention
+# from longformer_sliding_window import LongformerSelfAttention
+# from sliding_window import SlidingWindowAttention, SlidingWindowConfig
+from bigbird_mod import BigBirdModSelfAttention
 from attention_layers import (
-    SparseSelfAttention, 
-    BlocksparseFixedSelfAttention, 
-    MultiHeadAttention, 
+    SparseSelfAttention,
+    BlocksparseFixedSelfAttention,
+    MultiHeadAttention,
     ReallySparseAttention,
     NativeAttention,
     DynamicDilatedAttention,
     AlphaEntmax,
     NonadaptiveSparseAttention,
+    KnowingSparseAttention,
+    UnknowingSparseAttention,
+    EasySlidingWindowAttention,
 )
+from positional_encodings.torch_encodings import PositionalEncoding1D, Summer
 
 try:
     from typing import Literal
@@ -32,11 +39,59 @@ attention_types = Literal[
     'sparse2d', 
     'native',
     'simple-sparse',
+    'knowing',
+    'unknowing',
     'dilated',
     'bigbird',
     'smallbird',
     'smallerbird',
+    'sliding-window',
+    'bigbird-mod',
 ]
+
+pos_encodings = Literal[
+    'learned',
+    'sinusoidal',
+    'easy',
+]
+
+
+class NativeTransformer(nn.Module):
+
+    def __init__(self,
+                 emb: int,
+                 heads: int = 4,
+                 ff_hidden_mult: int = 4,
+                 dropout: float = 0.0,
+                 depth: int = 0,
+                 context: int = 0,
+                 vocab: int = 32000):
+        super().__init__()
+
+        self.token_embedding = nn.Embedding(num_embeddings=vocab, embedding_dim=emb)
+        self.pos_embedding = Summer(PositionalEncoding1D(emb))
+        self.nheads = heads
+        self.context = context
+        encoder_layer = nn.TransformerEncoderLayer(emb,
+                                                   heads,
+                                                   ff_hidden_mult * emb,
+                                                   dropout,
+                                                   batch_first=True,
+                                                   norm_first=True,
+                                                   device='cuda')
+        self.transformer = nn.TransformerEncoder(encoder_layer, depth)
+        self.to_vocab = nn.Linear(emb, vocab)
+
+    def embed(self, x):
+        # Here we'll do some embedding addition
+        x = self.token_embedding(x)
+        return self.pos_embedding(x)
+
+    def forward(self, x: Tensor, mask: Tensor) -> Tensor:
+        emb = self.embed(x)
+        mask = mask[:, None, :, :].expand(-1, self.nheads, -1, -1).reshape(-1, self.context, self.context)
+        out = self.transformer(emb, (~(mask.bool())))
+        return self.to_vocab(out)
 
 
 class TransformerBlock(nn.Module):
@@ -55,24 +110,31 @@ class TransformerBlock(nn.Module):
         super().__init__()  
         if attention_type == 'dense':
             self.attend = MultiHeadAttention(heads, emb, emb, context, **kwargs)
+        elif attention_type == 'sliding-window':
+            self.attend = EasySlidingWindowAttention(heads, emb, emb, context, **kwargs)
         elif attention_type == 'sparse':
-            self.attend = SparseSelfAttention(emb, context, n_heads=heads, **kwargs)
+            self.attend = SparseSelfAttention(emb, context, n_heads=heads, k=k, **kwargs)
         elif attention_type == 'fixed':
-            self.attend = BlocksparseFixedSelfAttention(emb, t=context, **kwargs)
+            self.attend = BlocksparseFixedSelfAttention(emb, k=k, t=context, **kwargs)
         elif attention_type == 'sparse2d':
-            self.attend = ReallySparseAttention(emb, context, n_heads=heads, **kwargs)
+            self.attend = ReallySparseAttention(emb, context, k=k, n_heads=heads, **kwargs)
         elif attention_type == 'native':
             self.attend = NativeAttention(heads, emb, context, **kwargs)
         elif attention_type == 'dilated':
             self.attend = DynamicDilatedAttention(shared_predictor, 
-                                                  emb, 
+                                                  emb,
+                                                  k=k,
                                                   layer=depth, 
                                                   n_heads=heads,
                                                   **kwargs)
         elif attention_type == 'entmax':
             self.attend = AlphaEntmax(heads, emb, context, **kwargs)
         elif attention_type == 'simple-sparse':
-            self.attend = NonadaptiveSparseAttention(emb, context, n_heads=heads, **kwargs)
+            self.attend = NonadaptiveSparseAttention(emb, context, k=k, n_heads=heads, **kwargs)
+        elif attention_type == 'knowing':
+            self.attend = KnowingSparseAttention(emb, context, k=k, n_heads=heads, **kwargs)
+        elif attention_type == 'unknowing':
+            self.attend = UnknowingSparseAttention(emb, context, k=k, n_heads=heads, **kwargs)
         elif attention_type == 'bigbird':
             cfg = BigBirdConfig(context, heads, emb, k, 1)
             self.attend = BigBirdBlockSparseAttention(cfg)
@@ -98,6 +160,17 @@ class TransformerBlock(nn.Module):
             }
             cfg = SmallerBirdConfig.from_dict(d)
             self.attend = SmallerBirdSparseAttention(cfg)
+        elif attention_type == 'bigbird-mod':
+            d = {
+                'max_position_embeddings': context,
+                'num_attention_heads': heads,
+                'hidden_size': emb,
+                'num_random_blocks': k,
+                'block_size': 1,
+                **kwargs,
+            }
+            cfg = SmallerBirdConfig.from_dict(d)
+            self.attend = BigBirdModSelfAttention(cfg)
         else:
             raise ValueError(f'attention_type {attention_type} not recognized')
 
@@ -131,7 +204,7 @@ class TransformerBlock(nn.Module):
                                                cuda='cuda' in util.d(x))
             # Single coord generated by hyper since 1-d case. Add x-coord for plotting
             x_coords = torch.arange(m.size(1), device=util.d(x))[None, :, None, None].expand_as(indices)
-            m = torch.cat([x_coords, indices], axis=-1)
+            m = torch.cat([x_coords, indices], dim=-1)
             m = torch.unique(m, dim=0)
         elif isinstance(self.attend, ReallySparseAttention):
             m, s, v = self.attend.hyper(normed1)
@@ -157,6 +230,31 @@ class MaskedSequential(nn.Sequential):
         return x
 
 
+class LearnedPosEmbedding(nn.Module):
+
+    def __init__(self, seq_len, emb_dim):
+        super().__init__()
+        self.embedding = nn.Embedding(num_embeddings=seq_len, embedding_dim=emb_dim)
+
+    def forward(self, seq: Tensor) -> Tensor:
+        """Takes an embedded sequence and adds learned pos embeddings to it"""
+        c = seq.shape[-2]
+        pos = torch.arange(c, device=util.d(seq))
+        pos_embeds = self.embedding(pos).expand_as(seq)
+        return seq + pos_embeds
+
+
+class EasyPosEmbedding(nn.Module):
+    """
+    Takes an embedding and adds a positional embedding to it.
+    """
+    def forward(self, seq: Tensor) -> Tensor:
+        b, c, e = seq.size()
+        pos = torch.arange(c, device=util.d(seq))[None, :].expand(b, -1)
+        pos = pos[:, :, None]
+        return torch.cat([seq, pos], dim=-1)
+
+
 class SparseTransformer(nn.Module):
     def __init__(self,
                  n_blocks: int,
@@ -165,13 +263,21 @@ class SparseTransformer(nn.Module):
                  vocab_size: int,
                  attention_type: str = None,
                  attentions: List[str] = None,
+                 pos_embedding: str = 'learned',
                  *args,
                  **kwargs):
         super().__init__()
         self.context_len = context_len
         self.vocab_size = vocab_size
-        self.token_embedding = nn.Embedding(num_embeddings=vocab_size, embedding_dim=emb)
-        self.pos_embedding = nn.Embedding(num_embeddings=context_len, embedding_dim=emb)
+        if pos_embedding == 'learned':
+            self.token_embedding = nn.Embedding(num_embeddings=vocab_size, embedding_dim=emb)
+            self.pos_embedding = LearnedPosEmbedding(context_len, emb)
+        elif pos_embedding == 'easy':
+            self.token_embedding = nn.Embedding(num_embeddings=vocab_size, embedding_dim=emb-1)
+            self.pos_embedding = EasyPosEmbedding()
+        elif pos_embedding == 'sinusoidal':
+            self.token_embedding = nn.Embedding(num_embeddings=vocab_size, embedding_dim=emb)
+            self.pos_embedding = Summer(PositionalEncoding1D(emb))
 
         if (attentions is not None and 'dilated' in attentions) or (attention_type == 'dilated'):
             self.shared_predictor = nn.Sequential(nn.Linear(1, 10),
@@ -205,10 +311,7 @@ class SparseTransformer(nn.Module):
     def embed(self, x: Tensor) -> Tensor:
         # Here we'll do some embedding addition
         x = self.token_embedding(x)
-        b, c, e = x.size()
-        positions = self.pos_embedding(torch.arange(self.context_len, dtype=torch.int, device=util.d(x)))[None, :, :] \
-            .expand(b, -1, -1)
-        return positions + x
+        return self.pos_embedding(x)
 
     def forward(self, x: Tensor, attention_mask: Tensor) -> Tensor:
         embedded = self.embed(x)  # (batch, context_len, emb)

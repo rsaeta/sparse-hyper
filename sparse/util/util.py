@@ -1,9 +1,9 @@
-import matplotlib as mpl
+"""import matplotlib as mpl
 mpl.use('Agg')
 import matplotlib.pyplot as plt
 from matplotlib.patches import Circle, Wedge, Polygon, Ellipse, Rectangle
 from matplotlib.collections import PatchCollection
-from matplotlib.axes import Axes
+from matplotlib.axes import Axes"""
 import os, errno, random, time, string, sys
 
 import torch

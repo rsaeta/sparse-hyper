@@ -290,31 +290,7 @@ class SmallerBirdSparseAttention(SparseSelfAttention):
 
         # generate random attention and corresponding masks
         np.random.seed(seed)
-        # if from_seq_length in [1024, 3072, 4096]:  # old plans used in paper
-        #     rand_attn = [
-        #         self._bigbird_block_rand_mask(self.max_seqlen, self.max_seqlen, wm, wn, r, last_idx=1024)[
-        #             : (from_seq_length // wm - 2)
-        #         ]
-        #         for _ in range(h)
-        #     ]
-        # else:
-        #     if plan_from_length is None:
-        #         plan_from_length, plan_num_rand_blocks = self._get_rand_attn_plan(from_seq_length, wm, r)
 
-        #     rand_attn = self._bigbird_block_rand_mask_with_head(
-        #         from_seq_length=from_seq_length,
-        #         to_seq_length=to_seq_length,
-        #         from_block_size=wm,
-        #         to_block_size=wn,
-        #         num_heads=h,
-        #         plan_from_length=plan_from_length,
-        #         plan_num_rand_blocks=plan_num_rand_blocks,
-        #     )
-
-        # rand_attn = np.stack(rand_attn, axis=0)
-        # rand_attn = torch.tensor(rand_attn, device=query_layer.device, dtype=torch.long)
-        # rand_attn.unsqueeze_(0)
-        # rand_attn = torch.cat([rand_attn for _ in range(batch_size)], dim=0)
         rand_mask = self._create_rand_mask_from_inputs(from_blocked_mask, to_blocked_mask, adaptive_attn_inds, h, r, b, m, wm)
 
         blocked_query_matrix = query_layer.view(b, h, m // wm, wm, -1)
