@@ -5,7 +5,7 @@ import os
 
 import torch
 from torch import nn, Tensor, optim
-from transformer_models import ClassificationTransformer
+from spalbp.models.transformer_models import ClassificationTransformer
 
 
 def get_answers(batch: Tensor, nums: int) -> Tensor:

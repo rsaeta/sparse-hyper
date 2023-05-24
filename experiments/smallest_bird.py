@@ -10,7 +10,7 @@ import torch.nn.functional as F
 
 import numpy as np
 from dataclasses import dataclass
-from attention_layers import SparseSelfAttention
+from spalbp.attention.config import SparseSelfAttention
 
 
 @dataclass
@@ -137,7 +137,7 @@ class SmallerBirdSparseAttention(SparseSelfAttention):
         # indices = torch.cat([out, indices], dim=3)
         # if self.mask:
         # indices = util.flip(indices)
-        # Here we expand the indicies for each head in this transformer block
+        # Here we expand the indicies for each head in this models block
         indices = indices[:, None, :, :, :].expand(-1, self.n_heads, -1, -1, -1) \
             .contiguous() \
             .view(batch * self.n_heads, context * num_points, -1)

@@ -2,7 +2,7 @@ import os
 import argparse
 import git
 
-from experiment_utils import (
+from spalbp.experiments.utils import (
     parse_args,
     get_model,
     learners,

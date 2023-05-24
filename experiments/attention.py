@@ -104,7 +104,7 @@ def prep(ci, hi, wi, pool=4, coord='none'):
 
 class STNAttentionLayer(nn.Module):
     """
-    Baseline: spatial transformer
+    Baseline: spatial models
     """
 
     def __init__(self, in_size, k, glimpses=1, scale=0.001, pool=4, coord='none'):
@@ -890,7 +890,7 @@ def go(arg):
 
     elif arg.modelname == 'stn':
         """
-        Spatial transformer with an MLP head.
+        Spatial models with an MLP head.
         """
 
         hyperlayer = STNAttentionLayer(in_size=shape, k=arg.k, glimpses=arg.num_glimpses, scale=arg.stn_scale, pool=arg.pool)
@@ -908,7 +908,7 @@ def go(arg):
 
     elif arg.modelname == 'stn-conv':
         """
-        Spatial transformer with a convolutional head.
+        Spatial models with a convolutional head.
         """
 
         hyperlayer = STNAttentionLayer(in_size=shape, k=arg.k, glimpses=arg.num_glimpses, scale=arg.stn_scale, pool=arg.pool)
