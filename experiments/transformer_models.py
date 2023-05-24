@@ -68,7 +68,7 @@ class NativeTransformer(nn.Module):
                  vocab: int = 32000):
         super().__init__()
 
-        self.token_embedding = nn.Embedding(num_embeddings=vocab, embedding_dim=emb, device='cuda')
+        self.token_embedding = nn.Embedding(num_embeddings=vocab, embedding_dim=emb)
         self.pos_embedding = Summer(PositionalEncoding1D(emb))
         self.nheads = heads
         self.context = context
