@@ -231,5 +231,5 @@ def save_model(cfg: RunConfig, model, optimizer, scheduler, checkpoint_num):
 def init_wandb(cfg: RunConfig):
     wandb.init(
         project=cfg.experiment.wandb_project,
-        config=cfg
+        config=dict(cfg),
     )
