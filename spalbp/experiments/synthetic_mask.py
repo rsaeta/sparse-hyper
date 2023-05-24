@@ -4,41 +4,29 @@ tokens with the [MASK] token but then placing the target outside the receptive f
 normal convolutional model. This will allow us to see if the model can learn to use the
 adaptive receptive field to learn to predict the target token.
 """
+from config import RunConfig
 import os
 import git
+import hydra
+from hydra.core.config_store import ConfigStore
 import torch
 import torch.nn.functional as F
+import sys
 import wandb
+from omegaconf import OmegaConf
+
+sys.path.append(os.path.abspath('..'))
+
+from spalbp.models import GeneratingTransformer
 
 from utils import (
     cuda,
-    get_tokenizer,
-    get_model,
-    parse_args,
+    device,
     setup,
     learners,
     save_model,
+    init_wandb
 )
-
-
-def init_wandb(args):
-    dir_path = os.path.dirname(os.path.realpath(__file__))
-    wandb.init(
-        project=f'sparse-transformer-synth',
-        config={
-            'context': args.context,
-            'lr': args.learning_rate,
-            'embedding': args.embedding,
-            'depth': args.depth,
-            'k': args.num_indices,
-            'attention': args.attention_type,
-            'gitsha': git.Repo(dir_path, search_parent_directories=True).head.object.hexsha,
-            'model_type': args.model_type,
-            'dir_path': dir_path,
-            'random_data': args.rand_data,
-            'random_seed': args.seed,
-        }
-    )
 
 
 def random_sample_data2(batch_size, seq_len, offset=70):
@@ -98,38 +86,40 @@ def apply_offset_mask(seq_input, i, mask_token, offset):
     return seq_input
 
 
-def _train(args):
-    setup(args)
-    tokenizer = get_tokenizer(args)
-    model = get_model(args, tokenizer.get_vocab_size())
-    optimizer, scheduler = learners(model, args)
+def _train(cfg: RunConfig):
+    model = GeneratingTransformer(cfg.model).to(device)
+    setup(cfg)
+    optimizer, scheduler = learners(model, cfg)
     tokens_seen = 0
-    if args.watch_model:
-        wandb.watch(model)
-    for i in range(args.num_batches):
+    train_cfg = cfg.experiment.training
+    for i in range(train_cfg.num_batches):
         model.train()
         optimizer.zero_grad()
-        seqs_inputs, attention_masks, targets, mask = random_sample_data2(args.batch_size, args.context)
+
+        data_sample = random_sample_data2(train_cfg.batch_size, cfg.experiment.context_size)
+        seqs_inputs, attention_masks, targets, mask = data_sample
+
         logits = model(seqs_inputs, attention_masks)
         num_classes = logits.size(-1)
         flattened_logits = logits.view(-1, num_classes)
         flattened_targets = targets.view(-1)
         flat_mask_idx = (~mask).view(-1).nonzero().view(-1)
         loss = F.cross_entropy(flattened_logits[flat_mask_idx], flattened_targets[flat_mask_idx], reduction='mean')
-        if i % args.log_every == 0:
+        if i % train_cfg.log_every == 0:
             to_log = {'loss': loss.item(), 'tokens_seen': tokens_seen, 'lr': scheduler.get_last_lr()[0]}
             if 'WANDB_MODE' in os.environ:
                 print(to_log)
             wandb.log(to_log, step=i)
         loss.backward()
-        torch.nn.utils.clip_grad_norm_(model.parameters(), args.clipping_value)
+        torch.nn.utils.clip_grad_norm_(model.parameters(), train_cfg.grad_clipping_value)
         optimizer.step()
         scheduler.step()
         tokens_seen += seqs_inputs.size(0) * seqs_inputs.size(1)
 
-        if i % args.validation_every == 0:
+        if i % train_cfg.validation_every == 0:
             model.eval()
-            seqs_inputs, attention_masks, targets, mask = random_sample_data(args.batch_size, args.context)
+            eval_sample = random_sample_data2(train_cfg.batch_size, cfg.experiment.context_size)
+            seqs_inputs, attention_masks, targets, mask = eval_sample
             logits = model(seqs_inputs, attention_masks)
             num_classes = logits.size(-1)
             flattened_logits = logits.view(-1, num_classes)
@@ -141,14 +131,20 @@ def _train(args):
                 print(to_log)
             wandb.log(to_log, step=i)
 
-        if args.save_dir is not None and i % args.save_every == 0:
-            save_model(args, model, optimizer, scheduler, i // args.save_every)
+        if cfg.experiment.save_dir is not None and i % train_cfg.save_every == 0:
+            save_model(cfg, model, optimizer, scheduler, i // train_cfg.save_every)
 
 
-def main(args):
-    init_wandb(args)
-    _train(args)
+cs = ConfigStore.instance()
+cs.store(name='run', node=RunConfig)
+
+
+@hydra.main(version_base=None, config_path='../config', config_name='sparse_model')
+def main(cfg: RunConfig):
+    print(OmegaConf.to_yaml(cfg, resolve=True))
+    init_wandb(cfg)
+    _train(cfg)
 
 
 if __name__ == '__main__':
-    main(parse_args())
+    main()

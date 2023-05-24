@@ -64,7 +64,8 @@ class ModelConfig:
     context_size: int
     positional_encoding_type: str
     t_blocks: List[TransformerBlockConfig]
-    vocab: int
+    vocab_size: int
+    num_classes: int
 
 
 class TransformerBlock(nn.Module):
@@ -225,16 +226,9 @@ class TransformerModel(nn.Module):
 
 class ClassificationTransformer(TransformerModel):
 
-    def __init__(self,
-                 n_blocks: int,
-                 context_len: int,
-                 emb: int,
-                 vocab_size: int,
-                 num_classes: int,
-                 *args,
-                 **kwargs):
-        super().__init__(n_blocks, context_len, emb, vocab_size, *args, **kwargs)
-        self.to_prob = nn.Linear(emb, num_classes)
+    def __init__(self, cfg: ModelConfig):
+        super().__init__(cfg)
+        self.to_prob = nn.Linear(cfg.embedding_dim, cfg.num_classes)
 
     def post_tblocks(self, x: Tensor) -> Tensor:
         x = x.max(dim=1)[0]  # (batch, emb)
@@ -244,15 +238,10 @@ class ClassificationTransformer(TransformerModel):
 
 
 class GeneratingTransformer(TransformerModel):
-    def __init__(self,
-                 n_blocks: int,
-                 context_len: int,
-                 emb: int,
-                 vocab_size: int,
-                 *args,
-                 **kwargs):
-        super().__init__(n_blocks, context_len, emb, vocab_size, *args, **kwargs)
-        self.to_probs = nn.Linear(emb, vocab_size)
+    def __init__(self, cfg: ModelConfig):
+        super().__init__(cfg)
+        self.vocab_size = cfg.vocab_size
+        self.to_probs = nn.Linear(cfg.embedding_dim, cfg.vocab_size)
 
     def post_tblocks(self, x: Tensor) -> Tensor:
         b, c, e = x.size()  # batch, context, embed

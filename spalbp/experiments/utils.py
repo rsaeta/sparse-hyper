@@ -1,13 +1,14 @@
 import argparse
+from argparse import Namespace
+import tokenizers
 import os
+from omegaconf import OmegaConf
 import json
 import re
 from pathlib import Path
 
-import tokenizers
 import torch
-
-from mlm_components import ByteTokenizer
+import wandb
 
 try:
     import torch._dynamo
@@ -16,16 +17,12 @@ except:
     supports_dyno = False
 from functools import partial
 
-from transformer_models import GeneratingTransformer, NativeTransformer
-from argparse import Namespace, ArgumentParser
-from tokenizers import BertWordPieceTokenizer
-
 try:
     from typing import get_args
 except ImportError:
     from typing_extensions import get_args
 
-from transformer_models import attention_types, pos_encodings
+from config import RunConfig
 
 
 cuda = torch.cuda.is_available()
@@ -117,85 +114,34 @@ def parse_args() -> Namespace:
     return options
 
 
-def get_model(args: Namespace, vocab_size: int, mask: bool = False) -> GeneratingTransformer:
-    if args.load_model is not None:
-        # make it an absolute path
-        args.resume_run = os.path.dirname(args.load_model)
-        model_args = get_resume_args(args)
-        args = model_args
-    if args.model_type is None:
-        attentions = None
-    elif args.model_type == 'dabirds':
-        attentions = [*['bigbird']*10, *['smallbird']*6]
-    elif args.model_type == 'native':
-        return NativeTransformer(
-            args.embedding,
-            args.n_heads,
-            depth=args.depth,
-            context=args.context
-        ).to(device)
+def lr(lr_warmup, num_batches, min_lr, i):
+    if i < lr_warmup:
+        next_lr = (i+1)/lr_warmup
     else:
-        attentions = None if args.model_type is None else [
-            'dilated',
-            'dilated',
-            'dilated',
-            'dense',
-            'dense',
-            'simple-sparse',
-            'simple-sparse',
-            'simple-sparse',
-            'sparse',
-            'sparse',
-            'sparse',
-            'dense',
-        ]
-    model = GeneratingTransformer(
-        args.depth,
-        args.context,
-        args.embedding,
-        vocab_size=vocab_size,
-        k=args.num_indices,
-        heads=args.n_heads,
-        nadditional=args.nadditional,
-        gadditional=args.gadditional,
-        attention_type=args.attention_type,
-        attentions=attentions,
-        mask=mask,
-        pos_embedding=args.pos_embedding,
-    )
-    if args.load_model is not None:
-        state_dict = torch.load(args.load_model, map_location=torch.device('cuda')
-                                if cuda else torch.device('cpu'))
-        model.load_state_dict(state_dict)
-    if cuda:
-        model = model.cuda()
-    return model
+        next_lr = 1 - i/num_batches
+    return max(next_lr, min_lr)
 
 
-def lr(args, i):
-    if i < args.lr_warmup:
-        next_lr = (i+1)/args.lr_warmup
-    else:
-        next_lr = 1 - i/args.num_batches
-    return max(next_lr, args.min_lr)
-
-
-def learners(model, args, load=True):
-    optimizer = torch.optim.AdamW(lr=args.learning_rate, params=model.parameters())
+def learners(model, cfg: RunConfig, load=True):
+    optimizer = torch.optim.AdamW(lr=cfg.experiment.optim.lr, params=model.parameters())
+    part = partial(lr,
+                   cfg.experiment.scheduler.warmup_steps,
+                   cfg.experiment.training.num_batches,
+                   cfg.experiment.scheduler.min_lr)
     scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer,
-                                                  partial(lr, args))
-    if args.constant_lr:
+                                                  part)
+    if cfg.experiment.optim.type == 'constant':
         scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer,
                                                       lambda _: 1.)
         return optimizer, scheduler
-    if args.load_model is not None and load:
-        optimizer_name = args.load_model.replace('model.pt', 'optimizer.pt')
-        schedule_name = args.load_model.replace('model.pt', 'scheduler.pt')
+    if cfg.experiment.load_dir is not None and load:
+        optimizer_name = os.path.join(cfg.experiment.load_dir, 'optimizer.pt')
+        schedule_name = os.path.join(cfg.experiment.load_dir, 'scheduler.pt')
         if os.path.isfile(optimizer_name):
             state_dict = torch.load(optimizer_name, map_location=torch.device('cuda')
                                     if cuda else torch.device('cpu'))
             optimizer.load_state_dict(state_dict)
-        if os.path.isfile(schedule_name) and not args.constant_lr:
+        if os.path.isfile(schedule_name) and not  cfg.experiment.optim.type == 'constant':
             state_dict = torch.load(schedule_name, map_location=torch.device('cuda')
                                     if cuda else torch.device('cpu'))
             scheduler.load_state_dict(state_dict)
@@ -220,14 +166,14 @@ def get_tokenizer(args: Namespace) -> tokenizers.Tokenizer:
     return tok
 
 
-def setup(args: Namespace):
-    save_dir = args.save_dir
+def setup(cfg: RunConfig):
+    save_dir = cfg.experiment.save_dir
     if save_dir is None:
         return
     if not os.path.isdir(save_dir):
         os.mkdir(save_dir)
     with open(os.path.join(save_dir, 'config.json'), 'w') as f:
-        json.dump(vars(args), f)
+        f.write(OmegaConf.to_yaml(cfg))
 
 
 def find_latest_model(path: str) -> str:
@@ -274,8 +220,16 @@ def get_resume_args(args):
     return new_args
 
 
-def save_model(args, model, optimizer, scheduler, checkpoint_num):
-    f_name = f'{args.save_dir}/' if args.save_last_only else f'{args.save_dir}/checkpoint_{checkpoint_num}_'
+def save_model(cfg: RunConfig, model, optimizer, scheduler, checkpoint_num):
+    f_name = f'{cfg.experiment.save_dir}/' if cfg.experiment.save_last \
+        else f'{cfg.experiment.save_dir}/checkpoint_{checkpoint_num}_'
     torch.save(model.state_dict(), f_name + 'model.pt')
     torch.save(optimizer.state_dict(), f_name + 'optimizer.pt')
     torch.save(scheduler.state_dict(), f_name + 'scheduler.pt')
+
+
+def init_wandb(cfg: RunConfig):
+    wandb.init(
+        project=cfg.experiment.wandb_project,
+        config=cfg
+    )

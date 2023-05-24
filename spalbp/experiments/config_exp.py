@@ -15,10 +15,7 @@ class ExperimentConfig:
     context_size: int = 256
 
 
-@dataclass
-class RunConfig:
-    experiment: ExperimentConfig = MISSING
-    model: ModelConfig = MISSING
+
 
 
 cs = ConfigStore.instance()
