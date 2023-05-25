@@ -29,91 +29,6 @@ cuda = torch.cuda.is_available()
 device = torch.device('cuda' if cuda else 'cpu')
 
 
-def parse_args() -> Namespace:
-    parser = ArgumentParser()
-    parser.add_argument('-N', '--num-batches',
-                        dest='num_batches',
-                        default=1_000_000,
-                        type=int)
-    parser.add_argument('-b', '--batch-size',
-                        dest='batch_size',
-                        default=16,
-                        type=int)
-    parser.add_argument('-l', '--learning-rate',
-                        dest='learning_rate',
-                        default=0.001,
-                        type=float)
-    parser.add_argument('-D', '--data', type=str)
-    parser.add_argument('-E', '--embedding',
-                        default=4, type=int)
-    parser.add_argument('-H', '--n-heads',
-                        dest='n_heads',
-                        default=4,
-                        type=int)
-    parser.add_argument("-C", "--context",
-                        help="Length of the sequences extracted from the corpus and the context used during inference.",
-                        default=256, type=int)
-    parser.add_argument("-d", "--depth",
-                        help="Depth of the network (nr. of models blocks)",
-                        default=12, type=int)
-    parser.add_argument("-r", "--random-seed",
-                        dest="seed",
-                        help="RNG seed. Negative for random",
-                        default=1, type=int)
-    parser.add_argument('-k', '--num-indices',
-                        dest='num_indices',
-                        help='Number of points in floating-point indices',
-                        default=8, type=int)
-    parser.add_argument('-m', '--lr-warmup',
-                        dest='lr_warmup',
-                        default=500, type=int)
-    parser.add_argument('-S', '--lr-stepsize',
-                        dest='lr_stepsize',
-                        default=10, type=int)
-    parser.add_argument('-n', '--neighbor_sample',
-                        dest='nadditional', default=2, type=int)
-    parser.add_argument('-g', '--global_sample',
-                        dest='gadditional', default=2, type=int)
-    parser.add_argument('-V', '--validation-every', default=200,
-                        dest='validation_every', type=int)
-    parser.add_argument('-A', '--attention-type', choices=get_args(attention_types),
-                        dest='attention_type', default='dense', type=str)
-    parser.add_argument('-L', '--clipping-value', type=float,
-                        dest='clipping_value', default=1.0)
-    parser.add_argument('-Y', '--save-every', default=1,
-                        type=int, dest='save_every')
-    parser.add_argument('--save-dir', dest='save_dir', type=str, required=False)
-    parser.add_argument('--watch-model', dest='watch_model', action='store_true')
-    parser.add_argument('--plot-attention', dest='plot_attention', action='store_true')
-    parser.add_argument('--load-model', dest='load_model',
-                        default=None, type=str)
-    parser.add_argument('--interact', default=False, action='store_true')
-    parser.add_argument('--constant-lr', action='store_true')
-    parser.add_argument('--tokenizer', default='wordpiece',
-                        type=str, choices=['wordpiece', 'byte'])
-    parser.add_argument('--tokenizer-file', default=None, required=False,
-                        type=str, dest='tokenizer_file')
-    parser.add_argument('--vocab-size', dest='vocab_size', default=32768,
-                        type=int)
-    parser.add_argument('--log-every', dest='log_every',
-                        type=int, default=1)
-    parser.add_argument('--min-lr', dest='min_lr', type=float, default=5e-5)
-    parser.add_argument('--micro-batch-size', dest='micro_batch_size',
-                        type=int, default=None)
-    parser.add_argument('--model-type', dest='model_type', default=None, type=str)
-    parser.add_argument('--resume-run', dest='resume_run', default=None, type=str)
-    parser.add_argument('--save-last', dest='save_last_only', action='store_true')
-    parser.add_argument('--finetune-ds', dest='finetune_ds', default=None, type=str)
-    parser.add_argument('--production', action='store_true', dest='production')
-    parser.add_argument('--finetune-subset', dest='finetune_subset', default=-1, type=int)
-    parser.add_argument('--finetune-epochs', dest='finetune_epochs', default=5, type=int)
-    parser.add_argument('--pos-embedding', dest='pos_embedding', default='learned', type=str,
-                        choices=get_args(pos_encodings))
-    parser.add_argument('--rand-data', dest='rand_data', action='store_true')
-    options = parser.parse_args()
-    return options
-
-
 def lr(lr_warmup, num_batches, min_lr, i):
     if i < lr_warmup:
         next_lr = (i+1)/lr_warmup
@@ -123,7 +38,11 @@ def lr(lr_warmup, num_batches, min_lr, i):
 
 
 def learners(model, cfg: RunConfig, load=True):
-    optimizer = torch.optim.AdamW(lr=cfg.experiment.optim.lr, params=model.parameters())
+    optimizer = torch.optim.AdamW(lr=cfg.experiment.optim.lr,
+                                  betas=tuple(cfg.experiment.optim.betas),
+                                  eps=cfg.experiment.optim.eps,
+                                  weight_decay=cfg.experiment.optim.weight_decay,
+                                  params=model.parameters())
     part = partial(lr,
                    cfg.experiment.scheduler.warmup_steps,
                    cfg.experiment.training.num_batches,
@@ -233,3 +152,14 @@ def init_wandb(cfg: RunConfig):
         project=cfg.experiment.wandb_project,
         config=dict(cfg),
     )
+
+
+def post_process_cfg(cfg: OmegaConf) -> RunConfig:
+    """
+    Because of shenanigans with not supporting well list interpolation, there's some interesting
+    things I had to do. See: https://github.com/facebookresearch/hydra/issues/1939#issuecomment-1035395006
+    """
+    OmegaConf.resolve(cfg)  # resolve interpolation
+    cfg = OmegaConf.structured(RunConfig(**cfg))  # type check stuff
+    del cfg.model['_t_block_dict']  # delete hackery
+    return cfg

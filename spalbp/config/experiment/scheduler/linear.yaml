@@ -1,0 +1,3 @@
+type: linear
+warmup_steps: 10000
+min_lr: 1e-5

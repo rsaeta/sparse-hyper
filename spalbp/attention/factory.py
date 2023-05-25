@@ -4,7 +4,7 @@ from .dynamic_sparse_attentions import (
     SparseSelfAttention, KnowingSparseAttention, UnknowingSparseAttention, NonadaptiveSparseAttention
 )
 from .misc_attention import AlphaEntmax
-from .native_attentions import MultiHeadAttention, NativeAttention
+from .native_attentions import MultiHeadAttention, NativeAttention, EasySlidingWindowAttention
 
 
 # Stores a mapping between attention types and their corresponding config and impl classes
@@ -16,6 +16,7 @@ type_to_classes = {
     'unknowing': (config.AdaptiveSparseAttentionConfig, UnknowingSparseAttention),
     'nonadaptive': (config.AdaptiveSparseAttentionConfig, NonadaptiveSparseAttention),
     'entmax': (config.AlphaEntmaxAttentionConfig, AlphaEntmax),
+    'sliding-window': (config.MultiHeadAttentionConfig, EasySlidingWindowAttention),
 }
 
 

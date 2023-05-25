@@ -72,7 +72,7 @@ class NativeAttention(nn.Module):
 
     @classmethod
     def from_config(cls, config: MultiHeadAttentionConfig):
-        return cls(config.num_heads, config.emb)
+        return cls(config.heads, config.emb)
 
     def __init__(self, num_heads, emb):
         super().__init__()

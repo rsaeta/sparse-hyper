@@ -1,16 +1,17 @@
 from dataclasses import dataclass
 from spalbp.config_base import _ConfigBase
 
+
 @dataclass
 class _AttentionConfig(_ConfigBase):
     emb: int
     heads: int
     context: int
+    head_size: int
 
 
 @dataclass
 class MultiHeadAttentionConfig(_AttentionConfig):
-    head_size: int
     dropout: float = 0.0
 
 

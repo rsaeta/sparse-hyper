@@ -6,7 +6,6 @@ adaptive receptive field to learn to predict the target token.
 """
 from config import RunConfig
 import os
-import git
 import hydra
 from hydra.core.config_store import ConfigStore
 import torch
@@ -18,14 +17,14 @@ from omegaconf import OmegaConf
 sys.path.append(os.path.abspath('..'))
 
 from spalbp.models import GeneratingTransformer
-
 from utils import (
     cuda,
     device,
     setup,
     learners,
     save_model,
-    init_wandb
+    init_wandb,
+    post_process_cfg,
 )
 
 
@@ -140,7 +139,8 @@ cs.store(name='run', node=RunConfig)
 
 
 @hydra.main(version_base=None, config_path='../config', config_name='sparse_model')
-def main(cfg: RunConfig):
+def main(cfg: OmegaConf):
+    cfg = post_process_cfg(cfg)
     print(OmegaConf.to_yaml(cfg, resolve=True))
     init_wandb(cfg)
     _train(cfg)

@@ -1,0 +1,13 @@
+defaults:
+  - t_blocks@_t_block_dict.t_block0: base_t_block
+  - t_blocks@_t_block_dict.t_block1: base_t_block
+  - _self_
+
+t_blocks: ${oc.dict.values:model._t_block_dict}
+name: ${model.type}_${model.t_blocks[0].attention.attention_type}
+type: transformer
+embedding_dim: 64
+context_size: ${experiment.context_size}
+positional_encoding_type: sinusoidal
+vocab_size: ${experiment.num_classes}
+num_classes: ${experiment.num_classes}
