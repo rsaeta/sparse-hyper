@@ -31,7 +31,6 @@ cs.store(name="run", node=RunConfig)
 @hydra.main(version_base=None, config_path="../config", config_name="config")
 def main(cfg: OmegaConf):
     cfg = post_process_cfg(cfg)
-    breakpoint()
 
     model = GeneratingTransformer(cfg.model)
 
