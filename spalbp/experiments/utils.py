@@ -159,6 +159,7 @@ def post_process_cfg(cfg: OmegaConf) -> RunConfig:
     Because of shenanigans with not supporting well list interpolation, there's some interesting
     things I had to do. See: https://github.com/facebookresearch/hydra/issues/1939#issuecomment-1035395006
     """
+    breakpoint()
     OmegaConf.resolve(cfg)  # resolve interpolation
     cfg = OmegaConf.structured(RunConfig(**cfg))  # type check stuff
     del cfg.model['_t_block_dict']  # delete hackery

@@ -1,8 +1,7 @@
+defaults:
+  - base_attention
+  - _self_
 attention_type: sparse
-emb: ${model.embedding_dim}
-heads: 4
-head_size: 16
-context: ${experiment.context_size}
 k: 2
 gadditional: 8
 nadditional: 3

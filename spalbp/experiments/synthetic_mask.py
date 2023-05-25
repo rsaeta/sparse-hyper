@@ -51,28 +51,6 @@ def random_sample_data2(batch_size, seq_len, offset=70):
     return seqs_inputs, attention_masks, targets, mask
 
 
-def random_sample_data(batch_size, seq_len, offset=70):
-    seqs_inputs = torch.randint(size=(batch_size, seq_len), low=100, high=32000)
-    attention_masks = torch.ones_like(seqs_inputs)
-    mask_token = 4
-    mask = torch.ones((batch_size, seq_len))
-    mask[:, 45:55] = 0
-    mask = mask.bool()
-    targets = seqs_inputs.detach().clone()
-    # Modify the input so that the masked token positions are filled with [MASK] tokens
-    # and the token at position mask + offset is the target token.
-    for b, m_i in (~mask).nonzero():
-        seqs_inputs[b] = apply_offset_mask(seqs_inputs[b], m_i, mask_token, offset)
-    # Expand the attention mask to a symmetric matrix
-    attention_masks = attention_masks[:, None, :].expand(-1, seq_len, -1)
-    if cuda:
-        seqs_inputs = seqs_inputs.cuda()
-        attention_masks = attention_masks.cuda()
-        targets = targets.cuda()
-        mask = mask.cuda()
-    return seqs_inputs, attention_masks, targets, mask
-
-
 def apply_offset_mask(seq_input, i, mask_token, offset):
     """
     This function replaces seq_input[i] with the mask_token and replaces
