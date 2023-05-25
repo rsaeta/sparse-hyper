@@ -100,7 +100,7 @@ class _OneDimensionalSparseAttention(nn.Module):
         batch2, np, _ = indices.shape
         batch_is = torch.arange(batch2, dtype=torch.long, device=util.d(x))[None, :].expand(np, -1).t().reshape(-1)
         indices2 = torch.cat([batch_is[:, None], indices.view(-1, 2)], dim=-1)
-        # breakpoint()
+
         dot = util.calc_vals(Q, K.transpose(-2, -1), indices2).view(batch2, -1)
         dot = sparse.logsoftmax(indices, weights * dot, (context, context)).exp()
         out = sparse.batchmm(indices, dot, size=(context, context), xmatrix=V)  # [B * H, C, E]

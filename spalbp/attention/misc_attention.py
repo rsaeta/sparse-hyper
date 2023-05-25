@@ -14,8 +14,8 @@ class AlphaEntmax(nn.Module):
             num_heads=config.heads,
             emb=config.emb,
             context=config.context,
+            head_size=config.head_size,
             alpha=config.alpha,
-            head_size=config.head_size
         )
 
     def __init__(self, num_heads, emb, context, head_size, alpha=1.5):
