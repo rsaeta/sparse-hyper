@@ -1,10 +1,5 @@
 defaults:
-  - base_attention
+  - base_sparse
   - _self_
 attention_type: sparse
-k: 2
-gadditional: 8
-nadditional: 3
-sigma_scale: 1.0
-transformation_method: modulo
 hyper_hidden_dim: 128

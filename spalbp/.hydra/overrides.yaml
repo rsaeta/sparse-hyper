@@ -1,0 +1,2 @@
+- model.t_blocks.0.attention.attention_type=entmax
+- ++model.t_blocks.0.attention.alpha=1.5

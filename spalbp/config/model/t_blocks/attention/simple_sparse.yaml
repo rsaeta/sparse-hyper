@@ -1,0 +1,3 @@
+defaults:
+  - base_sparse
+attention_type: simple_sparse

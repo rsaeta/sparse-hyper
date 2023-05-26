@@ -3,6 +3,7 @@ from . import config
 from .dynamic_sparse_attentions import (
     SparseSelfAttention, KnowingSparseAttention, UnknowingSparseAttention, NonadaptiveSparseAttention
 )
+from .bigbird import BigBirdBlockSparseAttention
 from .misc_attention import AlphaEntmax
 from .native_attentions import MultiHeadAttention, NativeAttention, EasySlidingWindowAttention
 
@@ -14,9 +15,10 @@ type_to_classes = {
     'sparse': (config.AdaptiveSparseAttentionConfig, SparseSelfAttention),
     'knowing': (config.AdaptiveSparseAttentionConfig, KnowingSparseAttention),
     'unknowing': (config.AdaptiveSparseAttentionConfig, UnknowingSparseAttention),
-    'nonadaptive': (config.AdaptiveSparseAttentionConfig, NonadaptiveSparseAttention),
+    'simple_sparse': (config.NonAdaptiveSparseAttentionConfig, NonadaptiveSparseAttention),
     'entmax': (config.AlphaEntmaxAttentionConfig, AlphaEntmax),
     'sliding-window': (config.MultiHeadAttentionConfig, EasySlidingWindowAttention),
+    'bigbird': (config.BigBirdConfig, BigBirdBlockSparseAttention),
 }
 
 

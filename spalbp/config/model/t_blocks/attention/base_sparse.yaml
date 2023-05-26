@@ -1,0 +1,8 @@
+defaults:
+  - base_attention
+  - _self_
+k: 2
+gadditional: 8
+nadditional: 3
+sigma_scale: 1.0
+transformation_method: modulo

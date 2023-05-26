@@ -1,0 +1,5 @@
+defaults:
+  - base_attention
+attention_type: bigbird
+num_random_blocks: 3
+block_size: 1

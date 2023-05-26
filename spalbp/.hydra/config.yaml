@@ -1,0 +1,54 @@
+experiment:
+  type: simple_synthetic_mlm
+  context_size: 256
+  data_source: synthetic
+  num_classes: 32768
+  save_dir: ./models/${experiment.type}_${experiment.data_source}_${model.name}
+  load_dir: null
+  save_last: true
+  wandb_project: sparse_transformer_synth
+  optim:
+    type: adam
+    lr: 0.0001
+    betas:
+    - 0.9
+    - 0.98
+    eps: 1.0e-09
+    weight_decay: 0.0
+  scheduler:
+    type: linear
+    warmup_steps: 10000
+    min_lr: 1.0e-05
+  training:
+    batch_size: 32
+    num_batches: 10000000
+    grad_clipping_value: 1.0
+    validation_every: 1000
+    log_every: 100
+    save_every: 1000
+model:
+  name: ${model.type}_${model.t_blocks[0].attention.attention_type}_${model.t_blocks[0].attention.k}
+  type: adaptive_sparse
+  embedding_dim: 64
+  context_size: ${experiment.context_size}
+  positional_encoding_type: sinusoidal
+  vocab_size: ${experiment.num_classes}
+  num_classes: ${experiment.num_classes}
+  t_blocks:
+  - embedding_dim: ${model.embedding_dim}
+    ff_hidden_mult: 4
+    dropout: 0.0
+    attention:
+      attention_type: entmax
+      emb: ${model.embedding_dim}
+      heads: 4
+      head_size: 16
+      context: ${experiment.context_size}
+      k: 2
+      gadditional: 8
+      nadditional: 3
+      sigma_scale: 1.0
+      transformation_method: modulo
+      hyper_hidden_dim: 128
+      alpha: 1.5
+    repeat: 8

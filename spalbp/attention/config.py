@@ -11,6 +11,13 @@ class _AttentionConfig(_ConfigBase):
 
 
 @dataclass
+class BigBirdConfig(_AttentionConfig):
+    num_random_blocks: int
+    block_size: int = 1
+    use_bias: bool = False
+
+
+@dataclass
 class MultiHeadAttentionConfig(_AttentionConfig):
     dropout: float = 0.0
 
@@ -27,6 +34,12 @@ class _OneDSparseAttention(_AttentionConfig):
     nadditional: int
     sigma_scale: float
     transformation_method: str
+
+
+@dataclass
+class NonAdaptiveSparseAttentionConfig(_OneDSparseAttention):
+    pass
+
 
 @dataclass
 class AdaptiveSparseAttentionConfig(_OneDSparseAttention):

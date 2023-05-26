@@ -1,5 +1,5 @@
 attention_type: ???
 emb: ${model.embedding_dim}
 heads: 4
-head_size: 16
 context: ${experiment.context_size}
+head_size: 16

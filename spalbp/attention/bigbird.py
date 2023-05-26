@@ -5,17 +5,7 @@ from torch import nn
 import torch.nn.functional as F
 
 import numpy as np
-from dataclasses import dataclass
-
-
-@dataclass
-class BigBirdConfig:
-    max_position_embeddings: int
-    num_attention_heads: int
-    hidden_size: int
-    num_random_blocks: int
-    block_size: int
-    use_bias: bool = False
+from config import BigBirdConfig
 
 
 def create_masks_for_block_sparse_attn(attention_mask: torch.Tensor, block_size: int):
@@ -54,28 +44,22 @@ def create_masks_for_block_sparse_attn(attention_mask: torch.Tensor, block_size:
 
 
 class BigBirdBlockSparseAttention(nn.Module):
-    def __init__(self, config, seed=None):
+    def __init__(self, config: BigBirdConfig, seed=None):
         super().__init__()
 
-        self.max_seqlen = config.max_position_embeddings
+        self.max_seqlen = config.context
         self.seed = seed
 
-        if config.hidden_size % config.num_attention_heads != 0:
-            raise ValueError(
-                "The hidden size (%d) is not a multiple of the number of attention "
-                "heads (%d)" % (config.hidden_size, config.num_attention_heads)
-            )
-
-        self.num_attention_heads = config.num_attention_heads
+        self.num_attention_heads = config.heads
         self.num_random_blocks = config.num_random_blocks
         self.block_size = config.block_size
 
-        self.attention_head_size = int(config.hidden_size / config.num_attention_heads)
+        self.attention_head_size = config.head_size
         self.all_head_size = self.num_attention_heads * self.attention_head_size
 
-        self.query = nn.Linear(config.hidden_size, self.all_head_size, bias=config.use_bias)
-        self.key = nn.Linear(config.hidden_size, self.all_head_size, bias=config.use_bias)
-        self.value = nn.Linear(config.hidden_size, self.all_head_size, bias=config.use_bias)
+        self.query = nn.Linear(config.emb, self.all_head_size, bias=config.use_bias)
+        self.key = nn.Linear(config.emb, self.all_head_size, bias=config.use_bias)
+        self.value = nn.Linear(config.emb, self.all_head_size, bias=config.use_bias)
 
     def transpose_for_scores(self, x):
         new_x_shape = x.size()[:-1] + (self.num_attention_heads, self.attention_head_size)
@@ -112,7 +96,7 @@ class BigBirdBlockSparseAttention(nn.Module):
         key_layer = self.transpose_for_scores(self.key(hidden_states))
         value_layer = self.transpose_for_scores(self.value(hidden_states))
 
-        blocked_encoder_mask, band_mask, from_mask, to_mask = create_masks_for_block_sparse_attn(torch.ones(batch_size, seqlen, device=query_layer.device), 1)
+        blocked_encoder_mask, band_mask, from_mask, to_mask = create_masks_for_block_sparse_attn(attention_mask, 1)
         context_layer, attention_probs = self.bigbird_block_sparse_attention(
             query_layer,
             key_layer,

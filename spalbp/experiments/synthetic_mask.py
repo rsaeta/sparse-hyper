@@ -69,6 +69,7 @@ def _train(cfg: RunConfig):
     optimizer, scheduler = learners(model, cfg)
     tokens_seen = 0
     train_cfg = cfg.experiment.training
+    breakpoint()
     for i in range(train_cfg.num_batches):
         model.train()
         optimizer.zero_grad()
@@ -116,7 +117,7 @@ cs = ConfigStore.instance()
 cs.store(name='run', node=RunConfig)
 
 
-@hydra.main(version_base=None, config_path='../config', config_name='sparse_model')
+@hydra.main(version_base=None, config_path='../config', config_name='config')
 def main(cfg: OmegaConf):
     cfg = post_process_cfg(cfg)
     print(OmegaConf.to_yaml(cfg, resolve=True))
