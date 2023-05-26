@@ -44,6 +44,11 @@ def create_masks_for_block_sparse_attn(attention_mask: torch.Tensor, block_size:
 
 
 class BigBirdBlockSparseAttention(nn.Module):
+
+    @classmethod
+    def from_config(cls, config: BigBirdConfig):
+        return cls(config)
+
     def __init__(self, config: BigBirdConfig, seed=None):
         super().__init__()
 
