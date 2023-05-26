@@ -10,13 +10,10 @@ import hydra
 from hydra.core.config_store import ConfigStore
 import torch
 import torch.nn.functional as F
-import sys
 import wandb
 from omegaconf import OmegaConf
-
-sys.path.append(os.path.abspath('..'))
-
-from spalbp.models import GeneratingTransformer
+from _context import models
+from models import GeneratingTransformer
 from utils import (
     cuda,
     device,
@@ -69,7 +66,6 @@ def _train(cfg: RunConfig):
     optimizer, scheduler = learners(model, cfg)
     tokens_seen = 0
     train_cfg = cfg.experiment.training
-    breakpoint()
     for i in range(train_cfg.num_batches):
         model.train()
         optimizer.zero_grad()

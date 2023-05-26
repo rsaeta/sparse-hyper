@@ -1,12 +1,8 @@
 from dataclasses import dataclass
 from typing import List
 from omegaconf import MISSING
-import os
-import sys
-
-sys.path.append(os.path.abspath('..'))
-
-from spalbp.models import ModelConfig
+from _context import models
+from models import ModelConfig
 
 
 @dataclass
