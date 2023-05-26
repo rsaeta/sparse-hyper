@@ -1,11 +1,10 @@
-from omegaconf import OmegaConf, DictConfig, MISSING
+from omegaconf import OmegaConf
 from config import RunConfig
 
 import hydra
 from hydra.core.config_store import ConfigStore
 
-from _context import models
-from models import GeneratingTransformer
+from lib.models import GeneratingTransformer
 from utils import post_process_cfg
 
 
@@ -26,7 +25,7 @@ cs = ConfigStore.instance()
 cs.store(name="run", node=RunConfig)
 
 
-@hydra.main(version_base=None, config_path="../config", config_name="config")
+@hydra.main(version_base=None, config_path="config", config_name="config")
 def main(cfg: OmegaConf):
     cfg = post_process_cfg(cfg)
 

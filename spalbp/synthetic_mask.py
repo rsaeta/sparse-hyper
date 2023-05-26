@@ -113,7 +113,7 @@ cs = ConfigStore.instance()
 cs.store(name='run', node=RunConfig)
 
 
-@hydra.main(version_base=None, config_path='../config', config_name='config')
+@hydra.main(version_base=None, config_path='config', config_name='config')
 def main(cfg: OmegaConf):
     cfg = post_process_cfg(cfg)
     print(OmegaConf.to_yaml(cfg, resolve=True))

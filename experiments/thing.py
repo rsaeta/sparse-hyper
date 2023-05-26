@@ -3,13 +3,13 @@ import os
 import json
 
 from _context import sparse
-from spalbp.experiments.utils import (
+from spalbp.utils import (
     get_model,
     get_tokenizer,
     find_latest_model,
 )
 
-from spalbp.experiments.synthetic_mask import random_sample_data2
+from spalbp.synthetic_mask import random_sample_data2
 
 
 def load_model(path_dir):

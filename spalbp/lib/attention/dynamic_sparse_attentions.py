@@ -5,7 +5,7 @@ from torch import nn, Tensor
 from _context import sparse
 from sparse import util
 
-from spalbp.attention.config import AdaptiveSparseAttentionConfig
+from spalbp.lib.attention.config import AdaptiveSparseAttentionConfig
 
 
 class _OneDimensionalSparseAttention(nn.Module):

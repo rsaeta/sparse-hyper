@@ -7,7 +7,7 @@ from datasets import load_dataset
 from torch import nn, Tensor
 from torch.nn import functional as F
 from torch.utils.data import DataLoader
-from spalbp.experiments import utils as utils
+from spalbp import utils as utils
 import evaluate
 from transformers import BertForSequenceClassification, BertTokenizer
 

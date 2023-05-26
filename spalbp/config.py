@@ -1,8 +1,8 @@
 from dataclasses import dataclass
 from typing import List
 from omegaconf import MISSING
-from _context import models
-from models import ModelConfig
+
+from lib.models import ModelConfig
 
 
 @dataclass

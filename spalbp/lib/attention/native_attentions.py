@@ -1,7 +1,7 @@
 import torch
 from torch import nn, Tensor
 
-from spalbp.attention.config import MultiHeadAttentionConfig
+from spalbp.lib.attention.config import MultiHeadAttentionConfig
 
 
 # TAKEN FROM https://github.com/karpathy/ng-video-lecture/blob/master/gpt.py
