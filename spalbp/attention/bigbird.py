@@ -5,7 +5,7 @@ from torch import nn
 import torch.nn.functional as F
 
 import numpy as np
-from config import BigBirdConfig
+from .config import BigBirdConfig
 
 
 def create_masks_for_block_sparse_attn(attention_mask: torch.Tensor, block_size: int):

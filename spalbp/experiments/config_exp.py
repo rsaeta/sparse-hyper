@@ -1,13 +1,11 @@
-import sys, os
 from omegaconf import OmegaConf, DictConfig, MISSING
 from config import RunConfig
 
 import hydra
 from hydra.core.config_store import ConfigStore
 
-sys.path.append(os.path.abspath('..'))
-
-from spalbp.models import ModelConfig, GeneratingTransformer
+from _context import models
+from models import GeneratingTransformer
 from utils import post_process_cfg
 
 
