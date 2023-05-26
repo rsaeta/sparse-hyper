@@ -12,8 +12,7 @@ import torch
 import torch.nn.functional as F
 import wandb
 from omegaconf import OmegaConf
-from _context import models
-from models import GeneratingTransformer
+from lib.models import GeneratingTransformer
 from utils import (
     cuda,
     device,
