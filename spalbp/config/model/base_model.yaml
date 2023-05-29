@@ -9,5 +9,5 @@ type: transformer
 embedding_dim: 64
 context_size: ${experiment.context_size}
 positional_encoding_type: sinusoidal
-vocab_size: ${experiment.num_classes}
+vocab_size: ${experiment.data.tokenizer.vocab_size}
 num_classes: ${experiment.num_classes}

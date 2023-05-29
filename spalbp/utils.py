@@ -1,5 +1,4 @@
 import argparse
-from argparse import Namespace
 import tokenizers
 import os
 from omegaconf import OmegaConf
@@ -9,6 +8,8 @@ from pathlib import Path
 
 import torch
 import wandb
+
+from lib.models import GeneratingTransformer, ClassificationTransformer
 
 try:
     import torch._dynamo
@@ -68,21 +69,37 @@ def learners(model, cfg: RunConfig, load=True):
     return optimizer, scheduler
 
 
-def get_tokenizer(args: Namespace) -> tokenizers.Tokenizer:
-    if args.tokenizer == 'wordpiece':
-        tokenizer_cls = BertWordPieceTokenizer
-    elif args.tokenizer == 'byte':
-        tokenizer_cls = ByteTokenizer
+def get_tokenizer(cfg: RunConfig) -> tokenizers.Tokenizer:
+    tok_cfg = cfg.experiment.data.tokenizer
+    tok_type = tok_cfg.type
+    if tok_type == 'wordpiece':
+        tokenizer_cls = tokenizers.BertWordPieceTokenizer
     else:
-        raise NotImplementedError(f'Tokenizer {args.tokenizer} not yet implemented')
-    tokenizer_fname = os.path.join('tokenizers', f'{args.tokenizer}_{os.path.basename(args.data)}.txt')
-    if os.path.exists(tokenizer_fname):
-        tok = tokenizer_cls.from_file(tokenizer_fname)
-    else:
+        raise NotImplementedError(f'Tokenizer {cfg.experiment.data.tokenizer.type} not yet implemented')
+
+    if tok_cfg.load_file is not None:
+        tok = tokenizer_cls.from_file(cfg.experiment.data.tokenizer.load_file)
+    elif tok_cfg.train_file is not None:
         tok = tokenizer_cls()
-        tok.train([args.data], vocab_size=args.vocab_size)
-    tok.enable_padding(length=args.context)
+        tok.train(tok_cfg.train_file, vocab_size=tok_cfg.vocab_size)
+    tok.enable_padding(length=cfg.experiment.context_size)
     return tok
+
+
+def get_model(cfg: RunConfig):
+    model_cls = ClassificationTransformer \
+        if cfg.experiment.data.output_type == 'classification' \
+        else GeneratingTransformer
+    model = model_cls(cfg.model)
+    return model.to(device)
+
+
+def get_criterion(cfg: RunConfig):
+    if cfg.experiment.data.output_type == 'classification':
+        if cfg.experiment.data.num_classes == 2:
+            return torch.nn.functional.binary_cross_entropy_with_logits
+        return torch.nn.functional.cross_entropy
+    return torch.nn.functional.mse_loss
 
 
 def setup(cfg: RunConfig):

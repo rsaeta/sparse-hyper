@@ -52,7 +52,7 @@ pos_encodings = Literal[
 class TransformerBlockConfig:
     attention: _AttentionConfig
     dropout: float
-    emb: int
+    embedding_dim: int
     ff_hidden_mult: int
     repeat: int
 
@@ -190,7 +190,6 @@ class TransformerModel(nn.Module):
             self.pos_embedding = SinusoidalPosEncoding(emb)
         else:
             raise ValueError(f'Unknown positional encoding type: {cfg.positional_encoding_type}')
-
         t_blocks = []
         for tblock_cfg in cfg.t_blocks:
             sub_tblocks = [TransformerBlock.from_config(tblock_cfg) for _ in range(tblock_cfg.repeat)]
