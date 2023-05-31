@@ -109,6 +109,18 @@ class _OneDimensionalSparseAttention(nn.Module):
 
 
 class NonadaptiveSparseAttention(_OneDimensionalSparseAttention):
+
+    @classmethod
+    def from_config(cls, config: AdaptiveSparseAttentionConfig):
+        return cls(config.emb,
+                   config.context,
+                   k=config.k,
+                   n_heads=config.heads,
+                   gadditional=config.gadditional,
+                   nadditional=config.nadditional,
+                   sigma_scale=config.sigma_scale,
+                   transformation_method=config.transformation_method)
+
     def __init__(self,
                  emb: int,
                  context_len: int,
@@ -217,6 +229,7 @@ class SparseSelfAttention(_OneDimensionalSparseAttention):
                    config.context,
                    k=config.k,
                    hidden=config.hyper_hidden_dim,
+                   n_heads=config.heads,
                    gadditional=config.gadditional,
                    nadditional=config.nadditional)
 

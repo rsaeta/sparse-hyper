@@ -5,7 +5,7 @@ import hydra
 from hydra.core.config_store import ConfigStore
 
 from lib.models import GeneratingTransformer
-from utils import post_process_cfg
+from utils import post_process_cfg, get_tokenizer
 
 
 """
@@ -27,6 +27,8 @@ cs.store(name="run", node=RunConfig)
 
 @hydra.main(version_base=None, config_path="config", config_name="config")
 def main(cfg: OmegaConf):
+    breakpoint()
+    tookenizer = get_tokenizer(cfg)
     cfg = post_process_cfg(cfg)
 
     model = GeneratingTransformer(cfg.model)
