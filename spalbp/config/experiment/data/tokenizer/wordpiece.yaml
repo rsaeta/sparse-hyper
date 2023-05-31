@@ -1,0 +1,3 @@
+type: wordpiece
+vocab_size: 32768
+load_file: tokenizers/vocab.txt

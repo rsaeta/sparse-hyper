@@ -1,0 +1,6 @@
+defaults:
+  - base_data
+  - _self_
+name: synthetic
+output_type: generation
+num_classes: ${experiment.data.tokenizer.vocab_size}
