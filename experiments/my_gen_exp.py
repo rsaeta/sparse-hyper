@@ -1,5 +1,5 @@
 import argparse
-from spalbp.experiments.utils import parse_args, get_model, cuda, learners
+from spalbp.utils import parse_args, get_model, cuda, learners
 from experiments.mlm_components import enwik8
 
 import torch

@@ -9,7 +9,7 @@ from torch import nn, Tensor
 import torch.nn.functional as F
 
 from dataclasses import dataclass
-from spalbp.attention.config import SparseSelfAttention
+from spalbp.lib.attention.config import SparseSelfAttention
 
 
 @dataclass

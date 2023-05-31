@@ -1,8 +1,8 @@
 from dataclasses import dataclass
 from typing import List
 from omegaconf import MISSING
-from _context import models
-from models import ModelConfig
+
+from lib.models import ModelConfig
 
 
 @dataclass
@@ -33,16 +33,33 @@ class TrainingConfig:
 
 
 @dataclass
+class TokenizerConfig:
+    type: str
+    train_file: str
+    load_file: str
+    vocab_size: int
+
+
+@dataclass
+class DataConfig:
+    name: str
+    batch_size: int
+    num_classes: int
+    output_type: str
+    tokenizer: TokenizerConfig
+
+
+@dataclass
 class ExperimentConfig:
     type: str
     context_size: int
-    data_source: str
     num_classes: int
     save_dir: str
     load_dir: str
     optim: OptimizerConfig
     scheduler: SchedulerConfig
     training: TrainingConfig
+    data: DataConfig
     save_last: bool
     wandb_project: str
 
@@ -51,3 +68,4 @@ class ExperimentConfig:
 class RunConfig:
     experiment: ExperimentConfig = MISSING
     model: ModelConfig = MISSING
+    resume: str = MISSING

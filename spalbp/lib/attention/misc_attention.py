@@ -3,7 +3,7 @@ from torch import nn
 
 import entmax
 
-from spalbp.attention.config import AlphaEntmaxAttentionConfig
+from spalbp.lib.attention.config import AlphaEntmaxAttentionConfig
 
 
 class AlphaEntmax(nn.Module):

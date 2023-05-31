@@ -1,4 +1,4 @@
-batch_size: 32
+batch_size: 4
 num_batches: 10_000_000
 grad_clipping_value: 1.0
 validation_every: 1000

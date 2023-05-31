@@ -1,0 +1,4 @@
+defaults:
+  - base_attention
+attention_type: native
+dropout: 0.0

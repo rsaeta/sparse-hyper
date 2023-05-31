@@ -10,7 +10,7 @@ import torch.nn.functional as F
 
 import numpy as np
 from dataclasses import dataclass
-from spalbp.attention.config import SparseSelfAttention
+from spalbp.lib.attention.config import SparseSelfAttention
 
 
 @dataclass
