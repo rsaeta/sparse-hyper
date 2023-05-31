@@ -68,3 +68,4 @@ class ExperimentConfig:
 class RunConfig:
     experiment: ExperimentConfig = MISSING
     model: ModelConfig = MISSING
+    resume: str = MISSING

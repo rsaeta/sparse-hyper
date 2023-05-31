@@ -21,6 +21,7 @@ from utils import (
     save_model,
     init_wandb,
     post_process_cfg,
+    get_model,
 )
 
 
@@ -60,7 +61,7 @@ def apply_offset_mask(seq_input, i, mask_token, offset):
 
 
 def _train(cfg: RunConfig):
-    model = GeneratingTransformer(cfg.model).to(device)
+    model = get_model(cfg)
     setup(cfg)
     optimizer, scheduler = learners(model, cfg)
     tokens_seen = 0

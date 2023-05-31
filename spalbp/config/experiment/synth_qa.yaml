@@ -1,5 +1,6 @@
 defaults:
   - base_experiment
+  - data: qqp
   - _self_
 
 type: synthetic_qa_mlm

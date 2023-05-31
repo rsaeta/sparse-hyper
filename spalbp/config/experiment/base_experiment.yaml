@@ -2,5 +2,4 @@ defaults:
   - optim: adam
   - scheduler: linear
   - training: defaults
-  - data: qqp
   - _self_

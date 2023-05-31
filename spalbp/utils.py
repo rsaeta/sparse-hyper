@@ -1,10 +1,7 @@
-import argparse
 import tokenizers
 import os
 from omegaconf import OmegaConf
-import json
 import re
-from pathlib import Path
 
 import torch
 import wandb
@@ -32,7 +29,7 @@ device = torch.device('cuda' if cuda else 'cpu')
 
 def lr(lr_warmup, num_batches, min_lr, i):
     if i < lr_warmup:
-        next_lr = (i+1)/lr_warmup
+        return (i+1)/lr_warmup
     else:
         next_lr = 1 - i/num_batches
     return max(next_lr, min_lr)
@@ -54,6 +51,7 @@ def learners(model, cfg: RunConfig, load=True):
         scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer,
                                                       lambda _: 1.)
         return optimizer, scheduler
+    breakpoint()
     if cfg.experiment.load_dir is not None and load:
         optimizer_name = os.path.join(cfg.experiment.load_dir, 'optimizer.pt')
         schedule_name = os.path.join(cfg.experiment.load_dir, 'scheduler.pt')
@@ -86,32 +84,6 @@ def get_tokenizer(cfg: RunConfig) -> tokenizers.Tokenizer:
     return tok
 
 
-def get_model(cfg: RunConfig):
-    model_cls = ClassificationTransformer \
-        if cfg.experiment.data.output_type == 'classification' \
-        else GeneratingTransformer
-    model = model_cls(cfg.model)
-    return model.to(device)
-
-
-def get_criterion(cfg: RunConfig):
-    if cfg.experiment.data.output_type == 'classification':
-        if cfg.experiment.data.num_classes == 2:
-            return torch.nn.functional.binary_cross_entropy_with_logits
-        return torch.nn.functional.cross_entropy
-    return torch.nn.functional.mse_loss
-
-
-def setup(cfg: RunConfig):
-    save_dir = cfg.experiment.save_dir
-    if save_dir is None:
-        return
-    if not os.path.isdir(save_dir):
-        os.mkdir(save_dir)
-    with open(os.path.join(save_dir, 'config.json'), 'w') as f:
-        f.write(OmegaConf.to_yaml(cfg))
-
-
 def find_latest_model(path: str) -> str:
     """Finds the latest model saved in path."""
     files = os.listdir(path)
@@ -129,31 +101,37 @@ def find_latest_model(path: str) -> str:
     return None
 
 
-def get_resume_args(args):
-    config_fname = os.path.join(args.resume_run, 'config.json')
-    latest_model_checkpoint = find_latest_model(args.resume_run)
-    new_args = argparse.Namespace()
-    with open(config_fname) as f:
-        def_args = json.load(f)
-    new_args.__dict__.update(**def_args)
-    if args.save_dir is None:  # remap savedir
-        save_dir = Path(args.resume_run).absolute()
-        match = re.match(r'(.*)(\d+)$', save_dir.parts[-1])
-        if match is not None:
-            next_i = int(match[2]) + 1
-            next_path = f'{match[1]}{next_i}'
-        else:
-            next_i = 2
-            next_path = f'{save_dir.parts[-1]}{next_i}'
-        full_path = os.path.join(*save_dir.parts[:-1], next_path)
-        new_args.__dict__.update(save_dir=full_path)
-    if latest_model_checkpoint is not None:
-        new_args.__dict__.update(load_model=latest_model_checkpoint)
-    if args.interact:
-        new_args.__dict__.update(interact=True)
-    new_args.__dict__.update(save_last_only=args.save_last_only)
-    new_args.__dict__.update(production=args.production)
-    return new_args
+def get_model(cfg: RunConfig):
+    model_cls = ClassificationTransformer \
+        if cfg.experiment.data.output_type == 'classification' \
+        else GeneratingTransformer
+    model = model_cls(cfg.model)
+    if cfg.experiment.load_dir is not None:
+        model_file = find_latest_model(cfg.experiment.load_dir)
+        if model_file is None:
+            raise FileNotFoundError(f'No model found in {cfg.experiment.load_dir}')
+        model.load_state_dict(torch.load(model_file,
+                                         map_location=torch.device('cuda')
+                                         if cuda else torch.device('cpu')))
+    return model.to(device)
+
+
+def get_criterion(cfg: RunConfig):
+    if cfg.experiment.data.output_type == 'classification':
+        if cfg.experiment.data.num_classes == 2:
+            return torch.nn.functional.binary_cross_entropy_with_logits
+        return torch.nn.functional.cross_entropy
+    return torch.nn.functional.mse_loss
+
+
+def setup(cfg: RunConfig):
+    save_dir = cfg.experiment.save_dir
+    if save_dir is None:
+        return
+    if not os.path.isdir(save_dir):
+        os.mkdir(save_dir)
+    with open(os.path.join(save_dir, 'config.yaml'), 'w') as f:
+        f.write(OmegaConf.to_yaml(cfg))
 
 
 def save_model(cfg: RunConfig, model, optimizer, scheduler, checkpoint_num):
@@ -171,12 +149,31 @@ def init_wandb(cfg: RunConfig):
     )
 
 
+def get_new_save_dir(cur_save_dir: str):
+    base_name = os.path.basename(cur_save_dir.strip('/'))
+    # Look for the name to end in a digit
+    match = re.match(r'(.*)-(\d+)', base_name)
+    if match is not None:
+        new_name = match[1] + '-' + str(int(match[2]) + 1)
+    else:
+        new_name = base_name + '-2'
+    to_ret = os.path.join(os.path.dirname(cur_save_dir.strip('/')), new_name)
+    return to_ret
+
+
 def post_process_cfg(cfg: OmegaConf) -> RunConfig:
     """
     Because of shenanigans with not supporting well list interpolation, there's some interesting
     things I had to do. See: https://github.com/facebookresearch/hydra/issues/1939#issuecomment-1035395006
     """
+    if cfg.resume is not None:
+        cfg_file = os.path.join(cfg.resume, 'config.yaml')
+        loaded_cfg = OmegaConf.load(cfg_file)
+        cfg.model = loaded_cfg.model
+        cfg.experiment.load_dir = cfg.resume
+        cfg.experiment.save_dir = get_new_save_dir(cfg.resume)
     OmegaConf.resolve(cfg)  # resolve interpolation
     cfg = OmegaConf.structured(RunConfig(**cfg))  # type check stuff
-    del cfg.model['_t_block_dict']  # delete hackery
+    if '_t_block_dict' in cfg.model:
+        del cfg.model['_t_block_dict']  # delete hackery
     return cfg

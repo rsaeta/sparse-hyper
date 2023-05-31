@@ -1,5 +1,6 @@
 defaults:
   - base_experiment
+  - data: synthetic
   - _self_
 
 type: simple_synthetic_mlm

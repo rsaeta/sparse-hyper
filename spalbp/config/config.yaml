@@ -1,3 +1,4 @@
 defaults:
   - experiment: synth
   - model: base_model
+resume: # None resume
