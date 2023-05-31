@@ -1,12 +1,6 @@
 from dataclasses import dataclass
 
 import torch
-#from bigbird import BigBirdBlockSparseAttention, BigBirdConfig
-# from longformer_sliding_window import LongformerSelfAttention
-# from sliding_window.yaml import SlidingWindowAttention, SlidingWindowConfig
-#from bigbird_mod import BigBirdModSelfAttention
-#from smallbird import SmallBirdSparseAttention, SmallBirdConfig
-#from smallest_bird import SmallerBirdConfig, SmallerBirdSparseAttention
 from torch import nn, Tensor
 
 from positional_encodings.torch_encodings import PositionalEncoding1D, Summer

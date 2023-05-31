@@ -51,7 +51,7 @@ def learners(model, cfg: RunConfig, load=True):
         scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer,
                                                       lambda _: 1.)
         return optimizer, scheduler
-    breakpoint()
+
     if cfg.experiment.load_dir is not None and load:
         optimizer_name = os.path.join(cfg.experiment.load_dir, 'optimizer.pt')
         schedule_name = os.path.join(cfg.experiment.load_dir, 'scheduler.pt')
@@ -59,7 +59,7 @@ def learners(model, cfg: RunConfig, load=True):
             state_dict = torch.load(optimizer_name, map_location=torch.device('cuda')
                                     if cuda else torch.device('cpu'))
             optimizer.load_state_dict(state_dict)
-        if os.path.isfile(schedule_name) and not  cfg.experiment.optim.type == 'constant':
+        if os.path.isfile(schedule_name) and not cfg.experiment.optim.type == 'constant':
             state_dict = torch.load(schedule_name, map_location=torch.device('cuda')
                                     if cuda else torch.device('cpu'))
             scheduler.load_state_dict(state_dict)

@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from typing import List
+from typing import List, Optional
 from omegaconf import MISSING
 
 from lib.models import ModelConfig
@@ -68,4 +68,4 @@ class ExperimentConfig:
 class RunConfig:
     experiment: ExperimentConfig = MISSING
     model: ModelConfig = MISSING
-    resume: str = MISSING
+    resume: Optional[str] = None

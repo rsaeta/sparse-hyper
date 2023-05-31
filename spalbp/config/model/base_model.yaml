@@ -11,4 +11,3 @@ context_size: ${experiment.context_size}
 positional_encoding_type: sinusoidal
 vocab_size: ${experiment.data.tokenizer.vocab_size}
 num_classes: ${experiment.num_classes}
-load_dir: ${load_dir}

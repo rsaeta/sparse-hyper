@@ -90,6 +90,8 @@ class BigBirdBlockSparseAttention(nn.Module):
         # Useless arguments: `attention_mask`, `head_mask`, `encoder_hidden_states`, `encoder_attention_mask`, `past_key_value`
         # Currently this `class` can't be used in decoder.
 
+        attention_mask = attention_mask[:, 0, :]
+
         batch_size, seqlen, _ = hidden_states.size()
         to_seq_length = from_seq_length = seqlen
         from_block_size = to_block_size = self.block_size
