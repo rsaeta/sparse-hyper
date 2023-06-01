@@ -29,7 +29,7 @@ class GlueDataset(Dataset):
                  tokenizer,
                  seq_len,
                  negative_rate=0.5,
-                 subset=10):
+                 subset=200):
         dataset = load_dataset('glue', dataset_name).filter(lambda i: i['label'] == 1)  # Only load positive examples
         self.train, self.val, self.test = dataset['train'], dataset['validation'], dataset['test']
         if subset:
@@ -96,7 +96,7 @@ def _train(cfg: RunConfig):
 
             tokens_seen += batch['input_ids'].numel()
             outputs = model(batch['input_ids'], batch['attention_mask'])
-            
+
             loss = criterion(outputs, batch['labels'])
             accuracy = (outputs.argmax(dim=-1) == batch['labels'].argmax(dim=-1)).float().mean()
             if i % train_cfg.log_every == 0:
