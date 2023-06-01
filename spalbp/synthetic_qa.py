@@ -28,42 +28,46 @@ class GlueDataset(Dataset):
                  dataset_name: str,
                  tokenizer,
                  seq_len,
-                 pad_middle=True):
-        dataset = load_dataset('glue', dataset_name)
+                 negative_rate=0.5,
+                 subset=10):
+        dataset = load_dataset('glue', dataset_name).filter(lambda i: i['label'] == 1)  # Only load positive examples
         self.train, self.val, self.test = dataset['train'], dataset['validation'], dataset['test']
+        if subset:
+            self.train = self.train.select(range(subset))
+            self.val = self.val.select(range(subset))
+            self.test = self.test.select(range(subset))
         self.tokenizer = tokenizer
         self.seq_len = seq_len
-        self.pad_middle = pad_middle
+        self.negative_rate = negative_rate
 
     def __getitem__(self, idx):
         item = self.train[idx]
-        if self.pad_middle:  # put padding in the middle so model has to attend over long distances
-            pad_token = self.tokenizer.token_to_id('[PAD]')
-            q1, q2 = item['question1'], item['question2']
-            q1, q2 = self.tokenizer.encode(q1), self.tokenizer.encode(q2)
-            if pad_token not in q2.ids:
-                q2_len = self.seq_len - 1
-            else:
-                q2_len = q2.ids.index(pad_token) - 1  # ignore starting [CLS] token
-            q2_start = len(q1.ids) - q2_len + 1
-            ids = torch.tensor(q1.ids)[:self.seq_len]
-            ids[q2_start:] = torch.tensor(q2.ids[1:q2_len])
-            attn_mask = torch.tensor(q1.attention_mask)[:self.seq_len]
-            attn_mask[q2_start:] = torch.tensor(q2.attention_mask[1:q2_len])
+        pad_token = self.tokenizer.token_to_id('[PAD]')
+        q1, q2 = item['question1'], item['question2']
+        if torch.rand(1).item() < self.negative_rate:  # sample a negative example
+            rand_idx = torch.randint(len(self.train), (1,)).item()
+            q2 = self.train[rand_idx]['question2']
+            label = int(idx == rand_idx)
+        else:
+            label = item['label']  # Should always be 1
+        q1, q2 = self.tokenizer.encode(q1), self.tokenizer.encode(q2)
+        if pad_token not in q2.ids:
+            q2_len = self.seq_len - 1
+        else:
+            q2_len = q2.ids.index(pad_token) - 1  # ignore starting [CLS] token
+        q2_start = len(q1.ids) - q2_len + 1
+        ids = torch.tensor(q1.ids)[:self.seq_len]
+        ids[q2_start:] = torch.tensor(q2.ids[1:q2_len])
+        attn_mask = torch.tensor(q1.attention_mask)[:self.seq_len]
+        attn_mask[q2_start:] = torch.tensor(q2.attention_mask[1:q2_len])
 
-            # Expand the attention mask to a symmetric matrix
-            attn_mask = attn_mask[:, None].expand(-1, self.seq_len)
-            label = F.one_hot(torch.tensor(item['label']), num_classes=2).float()
-            return {'input_ids': ids,
-                    'attention_mask': attn_mask,
-                    'labels': label}
-
-        encoded = self.tokenizer.encode(item['question1'],
-                                        item['question2'],
-                                        truncation=True,
-                                        padding='max_length',
-                                        max_length=self.seq_len)
-        return encoded
+        # Expand the attention mask to a symmetric matrix
+        attn_mask = attn_mask[:, None].expand(-1, self.seq_len)
+        attn_mask = torch.ones_like(attn_mask)
+        label = F.one_hot(torch.tensor(label), num_classes=2).float()
+        return {'input_ids': ids,
+                'attention_mask': attn_mask,
+                'labels': label}
 
     def __len__(self):
         return len(self.train)
@@ -92,10 +96,14 @@ def _train(cfg: RunConfig):
 
             tokens_seen += batch['input_ids'].numel()
             outputs = model(batch['input_ids'], batch['attention_mask'])
-
+            
             loss = criterion(outputs, batch['labels'])
+            accuracy = (outputs.argmax(dim=-1) == batch['labels'].argmax(dim=-1)).float().mean()
             if i % train_cfg.log_every == 0:
-                to_log = {'loss': loss.item(), 'tokens_seen': tokens_seen, 'lr': scheduler.get_last_lr()[0]}
+                to_log = {'loss': loss.item(),
+                          'tokens_seen': tokens_seen,
+                          'lr': scheduler.get_last_lr()[0],
+                          'accuracy': accuracy.item()}
                 if 'WANDB_MODE' in os.environ:
                     print(f'Batch {i} : {to_log}')
                 wandb.log(to_log, step=i)

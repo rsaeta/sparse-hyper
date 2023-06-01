@@ -224,7 +224,7 @@ class ClassificationTransformer(TransformerModel):
         self.to_prob = nn.Linear(cfg.embedding_dim, cfg.num_classes)
 
     def post_tblocks(self, x: Tensor) -> Tensor:
-        x = x.max(dim=1)[0]  # (batch, emb)
+        x = x[:, 0, :]  # (batch, embed) just take the first token
         x = self.to_prob(x)  # (batch, num_classes)
         x = torch.nn.functional.log_softmax(x, dim=1)  # (batch, num_classes) the probability distribution over classes
         return x

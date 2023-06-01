@@ -54,20 +54,6 @@ class MultiHeadAttention(nn.Module):
         return out
 
 
-class EasySlidingWindowAttention(MultiHeadAttention):
-
-    def forward(self, x: Tensor, attention_mask: Tensor):
-        c = x.shape[-2]
-        sliding_window_attn = torch.zeros((c, c), device=x.device)
-        r = torch.arange(c)
-        sliding_window_attn[r, torch.remainder(r + 1, c)] = 1  # forward attention
-        sliding_window_attn[r, torch.remainder(r - 1, c)] = 1  # backward attention
-        sliding_window_attn[r, torch.remainder(r, c)] = 1  # selfish attention
-        sliding_window_attn = sliding_window_attn.expand_as(attention_mask)
-        attention_mask = torch.logical_and(attention_mask, sliding_window_attn)
-        return super().forward(x, attention_mask)
-
-
 class NativeAttention(nn.Module):
 
     @classmethod
@@ -81,6 +67,27 @@ class NativeAttention(nn.Module):
 
     def forward(self, x: Tensor, attention_mask: Tensor) -> Tensor:
         b, c, e = attention_mask.shape
-        expanded = attention_mask[:, None, :, :].expand(b, self.num_heads, c, e).reshape(b * self.num_heads, c, e)
-        out, weights = self.native_attention(x, x, x, attn_mask=expanded.float(), need_weights=True)
+        expanded = ~(attention_mask[:, None, :, :]
+                     .expand(b, self.num_heads, c, e)
+                     .reshape(b * self.num_heads, c, e)
+                     .bool())
+
+        out, weights = self.native_attention(x, x, x, attn_mask=expanded, need_weights=True)
         return out
+
+
+class EasySlidingWindowAttention(NativeAttention):
+
+    def forward(self, x: Tensor, attention_mask: Tensor):
+        c = x.shape[-2]
+        sliding_window_attn = torch.zeros((c, c), device=x.device)
+        r = torch.arange(c)
+        sliding_window_attn[r, torch.remainder(r + 1, c)] = 1  # forward attention
+        sliding_window_attn[r, torch.remainder(r - 1, c)] = 1  # backward attention
+        sliding_window_attn[r, torch.remainder(r, c)] = 1  # selfish attention
+        sliding_window_attn[0, -1] = 0
+        sliding_window_attn[-1, 0] = 0
+        sliding_window_attn = sliding_window_attn.expand_as(attention_mask)
+        attention_mask = torch.logical_and(attention_mask, sliding_window_attn).long()
+
+        return super().forward(x, attention_mask)
