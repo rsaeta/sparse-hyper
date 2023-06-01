@@ -101,6 +101,15 @@ def find_latest_model(path: str) -> str:
     return None
 
 
+def load_dir(path: str):
+    cfg = OmegaConf.load(os.path.join(path, 'config.yaml'))
+    model = get_model(cfg)
+    model.load_state_dict(torch.load(find_latest_model(path),
+                                     map_location=torch.device('cuda')
+                                     if cuda else torch.device('cpu')))
+    return cfg, model
+
+
 def get_model(cfg: RunConfig):
     model_cls = ClassificationTransformer \
         if cfg.experiment.data.output_type == 'classification' \
