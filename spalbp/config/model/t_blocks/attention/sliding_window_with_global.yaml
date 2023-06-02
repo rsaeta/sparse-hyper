@@ -1,0 +1,3 @@
+defaults:
+  - sliding_window
+type: sliding-window-with-global

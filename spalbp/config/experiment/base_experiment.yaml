@@ -3,3 +3,4 @@ defaults:
   - scheduler: linear
   - training: defaults
   - _self_
+random_seed: 42

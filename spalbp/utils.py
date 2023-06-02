@@ -141,6 +141,7 @@ def setup(cfg: RunConfig):
         os.mkdir(save_dir)
     with open(os.path.join(save_dir, 'config.yaml'), 'w') as f:
         f.write(OmegaConf.to_yaml(cfg))
+    torch.manual_seed(cfg.experiment.random_seed)
 
 
 def save_model(cfg: RunConfig, model, optimizer, scheduler, checkpoint_num):

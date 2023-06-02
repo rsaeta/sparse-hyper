@@ -86,15 +86,33 @@ class EasySlidingWindowAttention(NativeAttention):
         super().__init__(num_heads, emb)
         self.window_size = window_size
 
+    @staticmethod
+    def _get_sliding_window_mask(c: int, window_size: int):
+        sliding_window_attn = torch.zeros((c, c))
+        r = torch.arange(c)
+        for step in range(1, 1+window_size):
+            sliding_window_attn[r, torch.minimum(r + step, torch.tensor(c-1))] = 1
+            sliding_window_attn[r, torch.maximum(r - step, torch.tensor(0))] = 1
+        return sliding_window_attn
+
     def forward(self, x: Tensor, attention_mask: Tensor):
         c = x.shape[-2]
-        sliding_window_attn = torch.zeros((c, c), device=x.device)
-        r = torch.arange(c)
-
-        for step in range(1, 1+self.window_size):
-            sliding_window_attn[r, torch.minimum(r + step, torch.tensor(c-1))] = 1  # forward attention
-            sliding_window_attn[r, torch.maximum(r - step, torch.tensor(0))] = 1  # backward attention
+        sliding_window_attn = self._get_sliding_window_mask(c, self.window_size)
+        sliding_window_attn = sliding_window_attn.to(x.device)
         sliding_window_attn = sliding_window_attn.expand_as(attention_mask)
         attention_mask = torch.logical_and(attention_mask, sliding_window_attn).long()
-
         return super().forward(x, attention_mask)
+
+
+class SlidingWindowWithGlobalAttention(EasySlidingWindowAttention):
+
+    def forward(self, x: Tensor, attention_mask: Tensor):
+        c = x.shape[-2]
+        sliding_window_attn = self._get_sliding_window_mask(c, self.window_size)
+        sliding_window_attn = sliding_window_attn.to(x.device)
+        sliding_window_attn[:, 0] = 1
+        sliding_window_attn[0, :] = 1
+        sliding_window_attn = sliding_window_attn.expand_as(attention_mask)
+        attention_mask = torch.logical_and(attention_mask, sliding_window_attn).long()
+        # Invoke grandparent's forward method
+        return super(EasySlidingWindowAttention, self).forward(x, attention_mask)
