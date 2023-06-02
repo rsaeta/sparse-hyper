@@ -231,7 +231,9 @@ class BigBirdBlockSparseAttention(nn.Module):
         rand_attn.unsqueeze_(0)
         rand_attn = torch.cat([rand_attn for _ in range(batch_size)], dim=0)
 
-        rand_mask = self._create_rand_mask_from_inputs(from_blocked_mask, to_blocked_mask, rand_attn, h, r, b, m, wm)
+        rand_mask = self._create_rand_mask_from_inputs(
+            from_blocked_mask, to_blocked_mask, rand_attn, h, r, b, m, wm
+        )
 
         blocked_query_matrix = query_layer.view(b, h, m // wm, wm, -1)
         blocked_key_matrix = key_layer.view(b, h, n // wn, wn, -1)
@@ -525,7 +527,6 @@ class BigBirdBlockSparseAttention(nn.Module):
         from_seq_length,
         from_block_size,
     ):
-
         num_windows = from_seq_length // from_block_size - 2
         rand_mask = torch.stack([p1[i1.flatten()] for p1, i1 in zip(to_blocked_mask, rand_attn)])
         rand_mask = rand_mask.view(batch_size, num_attention_heads, num_windows, num_rand_blocks * from_block_size)

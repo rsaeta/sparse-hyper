@@ -23,6 +23,11 @@ class MultiHeadAttentionConfig(_AttentionConfig):
 
 
 @dataclass
+class SlidingWindowConfig(MultiHeadAttentionConfig):
+    window_size: int = 1
+
+
+@dataclass
 class AlphaEntmaxAttentionConfig(_AttentionConfig):
     alpha: float = 1.5
 

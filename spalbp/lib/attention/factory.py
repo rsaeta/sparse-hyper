@@ -17,7 +17,7 @@ type_to_classes = {
     'unknowing': (config.AdaptiveSparseAttentionConfig, UnknowingSparseAttention),
     'simple_sparse': (config.NonAdaptiveSparseAttentionConfig, NonadaptiveSparseAttention),
     'entmax': (config.AlphaEntmaxAttentionConfig, AlphaEntmax),
-    'sliding-window': (config.MultiHeadAttentionConfig, EasySlidingWindowAttention),
+    'sliding-window': (config.SlidingWindowConfig, EasySlidingWindowAttention),
     'bigbird': (config.BigBirdConfig, BigBirdBlockSparseAttention),
 }
 

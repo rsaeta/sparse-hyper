@@ -2,3 +2,4 @@ defaults:
   - base_attention
 attention_type: sliding-window
 dropout: 0.0
+window_size: 4

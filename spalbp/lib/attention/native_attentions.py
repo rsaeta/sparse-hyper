@@ -1,7 +1,7 @@
 import torch
 from torch import nn, Tensor
 
-from spalbp.lib.attention.config import MultiHeadAttentionConfig
+from spalbp.lib.attention.config import MultiHeadAttentionConfig, SlidingWindowConfig
 
 
 # TAKEN FROM https://github.com/karpathy/ng-video-lecture/blob/master/gpt.py
@@ -78,15 +78,22 @@ class NativeAttention(nn.Module):
 
 class EasySlidingWindowAttention(NativeAttention):
 
+    @classmethod
+    def from_config(cls, config: SlidingWindowConfig):
+        return cls(config.heads, config.emb, config.window_size)
+
+    def __init__(self, num_heads, emb, window_size):
+        super().__init__(num_heads, emb)
+        self.window_size = window_size
+
     def forward(self, x: Tensor, attention_mask: Tensor):
         c = x.shape[-2]
         sliding_window_attn = torch.zeros((c, c), device=x.device)
         r = torch.arange(c)
-        sliding_window_attn[r, torch.remainder(r + 1, c)] = 1  # forward attention
-        sliding_window_attn[r, torch.remainder(r - 1, c)] = 1  # backward attention
-        sliding_window_attn[r, torch.remainder(r, c)] = 1  # selfish attention
-        sliding_window_attn[0, -1] = 0
-        sliding_window_attn[-1, 0] = 0
+
+        for step in range(1, 1+self.window_size):
+            sliding_window_attn[r, torch.minimum(r + step, torch.tensor(c-1))] = 1  # forward attention
+            sliding_window_attn[r, torch.maximum(r - step, torch.tensor(0))] = 1  # backward attention
         sliding_window_attn = sliding_window_attn.expand_as(attention_mask)
         attention_mask = torch.logical_and(attention_mask, sliding_window_attn).long()
 
