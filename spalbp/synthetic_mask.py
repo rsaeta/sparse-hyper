@@ -70,7 +70,7 @@ def _train(cfg: RunConfig):
         model.train()
         optimizer.zero_grad()
 
-        data_sample = random_sample_data2(train_cfg.batch_size, cfg.experiment.context_size)
+        data_sample = random_sample_data2(train_cfg.batch_size, cfg.experiment.context_size, cfg.experiment.offset)
         seqs_inputs, attention_masks, targets, mask = data_sample
 
         logits, aux_loss = model(seqs_inputs, attention_masks)
