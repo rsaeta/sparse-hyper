@@ -86,9 +86,14 @@ class TransformerBlock(nn.Module):
         )
 
     def forward(self, x: Tensor, attention_mask: Tensor) -> Tensor:
-        x = self.dropout(x + self.attend(self.norm1(x), attention_mask))
+        attended = self.attend(self.norm1(x), attention_mask)
+        if type(attended) is tuple:
+            attended, loss = attended
+        else:
+            loss = None
+        x = self.dropout(x + attended)
         x = self.dropout(x + self.ff(self.norm2(x)))
-        return x
+        return x, loss
 
     def forward_for_plot(self, x: Tensor, attention_mask) -> Tuple[Tensor, Tuple[Tensor, Tensor, Tensor]]:
         normed1 = self.norm1(x)
@@ -127,9 +132,12 @@ class TransformerBlock(nn.Module):
 class MaskedSequential(nn.Sequential):
     """To handle passing multiple values to the forward function"""
     def forward(self, x: Tensor, mask: Tensor):
+        loss_acc = torch.tensor(0., requires_grad=True, device=x.device)
         for module in self._modules.values():
-            x = module(x, mask)
-        return x
+            x, aux_loss = module(x, mask)
+            if aux_loss is not None:
+                loss_acc = loss_acc + aux_loss
+        return x, loss_acc
 
 
 class LearnedPosEmbedding(nn.Module):
@@ -196,11 +204,11 @@ class TransformerModel(nn.Module):
         x = self.token_embedding(x)
         return self.pos_embedding(x)
 
-    def forward(self, x: Tensor, attention_mask: Tensor) -> Tensor:
+    def forward(self, x: Tensor, attention_mask: Tensor) -> Tuple[Tensor, Tensor]:
         embedded = self.embed(x)  # (batch, context_len, emb)
-        t_blocked = self.t_blocks(embedded, attention_mask)  # (batch, context_len, emb)
+        t_blocked, aux_loss = self.t_blocks(embedded, attention_mask)  # (batch, context_len, emb)
         done = self.post_tblocks(t_blocked)
-        return done
+        return done, aux_loss
 
     def forward_for_plot(self, x: Tensor) -> Tuple[Tensor, Tuple[List, List, List]]:
         ms, ss, vs = [], [], []

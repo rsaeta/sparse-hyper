@@ -62,6 +62,7 @@ class ExperimentConfig:
     data: DataConfig
     save_last: bool
     wandb_project: str
+    random_seed: int
 
 
 @dataclass

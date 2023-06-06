@@ -1,0 +1,9 @@
+defaults:
+  - base_attention
+attention_type: clustered
+num_clusters: 10
+num_iterations: 10
+hash_bits: 32
+attention_dropout: 0.0
+softmax_temp: 16
+window_size: 16

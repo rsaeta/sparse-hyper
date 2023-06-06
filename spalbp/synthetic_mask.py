@@ -73,7 +73,7 @@ def _train(cfg: RunConfig):
         data_sample = random_sample_data2(train_cfg.batch_size, cfg.experiment.context_size)
         seqs_inputs, attention_masks, targets, mask = data_sample
 
-        logits = model(seqs_inputs, attention_masks)
+        logits, aux_loss = model(seqs_inputs, attention_masks)
         num_classes = logits.size(-1)
         flattened_logits = logits.view(-1, num_classes)
         flattened_targets = targets.view(-1)
@@ -84,6 +84,7 @@ def _train(cfg: RunConfig):
             if 'WANDB_MODE' in os.environ:
                 print(to_log)
             wandb.log(to_log, step=i)
+        loss = loss + aux_loss
         loss.backward()
         torch.nn.utils.clip_grad_norm_(model.parameters(), train_cfg.grad_clipping_value)
         optimizer.step()
@@ -92,14 +93,15 @@ def _train(cfg: RunConfig):
 
         if i % train_cfg.validation_every == 0:
             model.eval()
-            eval_sample = random_sample_data2(train_cfg.batch_size, cfg.experiment.context_size)
-            seqs_inputs, attention_masks, targets, mask = eval_sample
-            logits = model(seqs_inputs, attention_masks)
-            num_classes = logits.size(-1)
-            flattened_logits = logits.view(-1, num_classes)
-            flattened_targets = targets.view(-1)
-            flat_mask_idx = (~mask).view(-1).nonzero().view(-1)
-            loss = F.cross_entropy(flattened_logits[flat_mask_idx], flattened_targets[flat_mask_idx], reduction='mean')
+            with torch.no_grad():
+                eval_sample = random_sample_data2(train_cfg.batch_size, cfg.experiment.context_size)
+                seqs_inputs, attention_masks, targets, mask = eval_sample
+                logits, _ = model(seqs_inputs, attention_masks)
+                num_classes = logits.size(-1)
+                flattened_logits = logits.view(-1, num_classes)
+                flattened_targets = targets.view(-1)
+                flat_mask_idx = (~mask).view(-1).nonzero().view(-1)
+                loss = F.cross_entropy(flattened_logits[flat_mask_idx], flattened_targets[flat_mask_idx], reduction='mean')
             to_log = {'val_loss': loss.item()}
             if 'WANDB_MODE' in os.environ:
                 print(to_log)
