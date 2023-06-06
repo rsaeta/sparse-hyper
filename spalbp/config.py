@@ -63,6 +63,7 @@ class ExperimentConfig:
     save_last: bool
     wandb_project: str
     random_seed: int
+    offset: int
 
 
 @dataclass

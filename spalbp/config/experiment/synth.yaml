@@ -11,3 +11,4 @@ save_dir: ./models/${experiment.type}_${model.name}
 load_dir: # None load dir
 save_last: true
 wandb_project: sparse_transformer_synth
+offset: 70
