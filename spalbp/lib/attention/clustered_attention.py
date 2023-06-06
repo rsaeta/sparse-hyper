@@ -14,7 +14,8 @@ class ClusteredAttention(nn.Module):
                    config.context,
                    config.num_clusters,
                    config.head_size,
-                   config.attention_dropout)
+                   config.attention_dropout,
+                   config.window_size)
 
     def __init__(self,
                  num_heads: int,
@@ -22,10 +23,11 @@ class ClusteredAttention(nn.Module):
                  context: int,
                  clusters: int,
                  head_size: int,
-                 dropout: float):
+                 dropout: float,
+                 window_size: int):
         super().__init__()
         self.attention = KmeansAttention(clusters,
-                                         context,  # window_size
+                                         window_size,  # window_size
                                          4,  # global attention
                                          head_size,
                                          causal=False,
@@ -36,9 +38,6 @@ class ClusteredAttention(nn.Module):
         self.to_values = nn.Linear(embedding_dim, head_size * num_heads)
         self.to_queries = nn.Linear(embedding_dim, head_size * num_heads)
         self.unify = nn.Linear(head_size * num_heads, embedding_dim)
-
-    #        self.head_size = head_size
-    #        self.layer = attn.attention_layer.AttentionLayer(_attention, embedding_dim, num_heads, head_size, head_size)
 
     def forward(self, x: torch.Tensor, attention_mask: torch.Tensor):
         b, c, e = x.shape

@@ -57,4 +57,5 @@ class ClusteredAttentionConfig(_AttentionConfig):
     num_iterations: int
     hash_bits: int
     softmax_temp: float
+    window_size: int
     attention_dropout: float = 0.0
