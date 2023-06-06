@@ -8,6 +8,7 @@ from .misc_attention import AlphaEntmax
 from .native_attentions import (
     MultiHeadAttention, NativeAttention, EasySlidingWindowAttention, SlidingWindowWithGlobalAttention
 )
+from .clustered_attention import ClusteredAttention
 
 
 # Stores a mapping between attention types and their corresponding config and impl classes
@@ -22,6 +23,7 @@ type_to_classes = {
     'sliding-window': (config.SlidingWindowConfig, EasySlidingWindowAttention),
     'bigbird': (config.BigBirdConfig, BigBirdBlockSparseAttention),
     'sliding-window-with-global': (config.SlidingWindowConfig, SlidingWindowWithGlobalAttention),
+    'clustered': (config.ClusteredAttentionConfig, ClusteredAttention),
 }
 
 
