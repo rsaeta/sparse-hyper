@@ -1,7 +1,7 @@
 import torch
 from torch import nn
-import fast_transformers.attention as attn
-from fast_transformers.attention import ClusteredAttention as _ClusteredAttention
+# from routing_transformer.routing_transformer import SelfAttention
+from routing_transformer import KmeansAttention
 from .config import ClusteredAttentionConfig
 
 
@@ -11,31 +11,40 @@ class ClusteredAttention(nn.Module):
     def from_config(cls, config: ClusteredAttentionConfig):
         return cls(config.heads,
                    config.emb,
-                   config.head_size,
+                   config.context,
                    config.num_clusters,
-                   config.num_iterations,
-                   config.hash_bits,
-                   config.softmax_temp,
+                   config.head_size,
                    config.attention_dropout)
 
     def __init__(self,
                  num_heads: int,
                  embedding_dim: int,
-                 head_size: int,
+                 context: int,
                  clusters: int,
-                 iterations: int,
-                 hash_bits: int,
-                 softmax_temp: float,
+                 head_size: int,
                  dropout: float):
         super().__init__()
-        _attention = _ClusteredAttention(clusters,
-                                         iterations=iterations,
-                                         bits=hash_bits,
-                                         softmax_temp=softmax_temp,
-                                         attention_dropout=dropout)
+        self.attention = KmeansAttention(clusters,
+                                         context,  # window_size
+                                         4,  # global attention
+                                         head_size,
+                                         causal=False,
+                                         dropout=dropout)
+        self.num_heads = num_heads
         self.head_size = head_size
-        self.layer = attn.attention_layer.AttentionLayer(_attention, embedding_dim, num_heads, head_size, head_size)
+        self.to_keys = nn.Linear(embedding_dim, head_size * num_heads)
+        self.to_values = nn.Linear(embedding_dim, head_size * num_heads)
+        self.to_queries = nn.Linear(embedding_dim, head_size * num_heads)
+        self.unify = nn.Linear(head_size * num_heads, embedding_dim)
+
+    #        self.head_size = head_size
+    #        self.layer = attn.attention_layer.AttentionLayer(_attention, embedding_dim, num_heads, head_size, head_size)
 
     def forward(self, x: torch.Tensor, attention_mask: torch.Tensor):
-        attention_mask.all_ones = lambda: True
-        return self.layer(x, x, x, attention_mask, self.head_size, self.head_size)
+        b, c, e = x.shape
+        k = self.to_keys(x).view(b, c, self.num_heads, self.head_size).transpose(1, 2)  # (B, nh, T, hs)
+        v = self.to_values(x).view(b, c, self.num_heads, self.head_size).transpose(1, 2)  # (B, nh, T, hs)
+        q = self.to_queries(x).view(b, c, self.num_heads, self.head_size).transpose(1, 2)  # (B, nh, T, hs)
+        out, loss = self.attention(q, k, v)  # kind of annoying have to deal with aux-loss here
+        out = self.unify(out.transpose(1, 2).reshape(b, c, self.num_heads * self.head_size))
+        return out, loss
