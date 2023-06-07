@@ -6,4 +6,4 @@ num_iterations: 10
 hash_bits: 32
 attention_dropout: 0.0
 softmax_temp: 16
-window_size: 16
+window_size: 64

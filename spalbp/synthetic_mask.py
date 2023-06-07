@@ -94,7 +94,9 @@ def _train(cfg: RunConfig):
         if i % train_cfg.validation_every == 0:
             model.eval()
             with torch.no_grad():
-                eval_sample = random_sample_data2(train_cfg.batch_size, cfg.experiment.context_size)
+                eval_sample = random_sample_data2(
+                    train_cfg.batch_size, cfg.experiment.context_size, cfg.experiment.offset
+                )
                 seqs_inputs, attention_masks, targets, mask = eval_sample
                 logits, _ = model(seqs_inputs, attention_masks)
                 num_classes = logits.size(-1)
