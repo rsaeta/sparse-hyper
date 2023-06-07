@@ -6,7 +6,4 @@ defaults:
 type: synthetic_qa_mlm
 context_size: 256
 num_classes: 2
-save_dir: ./models/${experiment.type}_${model.name}
-load_dir: # None load dir
-save_last: true
 wandb_project: synth_qa

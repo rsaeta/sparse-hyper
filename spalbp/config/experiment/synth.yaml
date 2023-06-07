@@ -7,8 +7,5 @@ type: simple_synthetic_mlm
 context_size: 256
 data_source: synthetic
 num_classes: ${experiment.data.tokenizer.vocab_size}
-save_dir: ./models/${experiment.type}_${model.name}
-load_dir: # None load dir
-save_last: true
 wandb_project: sparse_transformer_synth
 offset: 70

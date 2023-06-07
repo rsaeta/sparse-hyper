@@ -25,7 +25,7 @@ cs = ConfigStore.instance()
 cs.store(name="run", node=RunConfig)
 
 
-@hydra.main(version_base=None, config_path="config", config_name="config")
+@hydra.main(version_base=None, config_path="config", config_name="synthetic_qa")
 def main(cfg: OmegaConf):
     breakpoint()
     tookenizer = get_tokenizer(cfg)

@@ -4,4 +4,7 @@ defaults:
   - training: defaults
   - _self_
 random_seed: 42
-offset: 70
+save_dir:  # None save dir
+load_dir:  # None load dir
+save_last: true
+wandb_project: ???
