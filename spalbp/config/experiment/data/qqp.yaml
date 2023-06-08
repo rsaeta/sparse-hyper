@@ -1,6 +1,3 @@
-defaults:
-  - base_data
-  - _self_
 name: qqp
 output_type: classification
 num_classes: 2

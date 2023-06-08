@@ -71,6 +71,12 @@ class SynthMaskExperimentConfig(ExperimentConfig):
 
 
 @dataclass
+class KnowledgeDistillationExperiment(ExperimentConfig):
+    teacher_model: str
+    mlm_prob: float
+
+
+@dataclass
 class RunConfig:
     experiment: ExperimentConfig = MISSING
     model: ModelConfig = MISSING
