@@ -1,9 +1,13 @@
+import datasets
 import tokenizers
+import transformers
 import os
 from omegaconf import OmegaConf
 import re
+import random
 
 import torch
+from torch.utils.data import DataLoader, Dataset
 import wandb
 
 from lib.models import GeneratingTransformer, ClassificationTransformer
@@ -187,3 +191,53 @@ def post_process_cfg(cfg: OmegaConf) -> RunConfig:
     if '_t_block_dict' in cfg.model:
         del cfg.model['_t_block_dict']  # delete hackery
     return cfg
+
+
+def get_pretrained_model(cfg: RunConfig):
+    if 'teacher_model' not in cfg.experiment:
+        raise ValueError('No teacher model specified')
+    if cfg.experiment.teacher_model == 'bert-base-uncased':
+        tokenizer = transformers.BertTokenizer.from_pretrained('bert-base-uncased')
+        model = transformers.BertModel.from_pretrained('bert-base-uncased')
+        return tokenizer, model
+    raise NotImplementedError(f'Pretrained model {cfg.experiment.teacher_model} not yet implemented')
+
+
+class MaskedLMDataset(torch.utils.data.Dataset):
+    def __init__(self, dataset: datasets.Dataset, tokenizer: transformers.PreTrainedTokenizer,
+                 context_size: int, mask_prob: float, pad_middle=True):
+        self.ds = dataset
+        self.tokenizer = tokenizer
+        self.tokenizer.model_max_length = context_size
+        self.context_size = context_size
+        self.mask_prob = mask_prob
+        self.pad_middle = pad_middle
+
+    def __len__(self):
+        return len(self.ds)
+
+    def __getitem__(self, item):
+        line1 = self.ds[item]['text']
+        line2 = self.ds[item + 1]['text']
+
+        tokens1 = self.tokenizer.tokenize(line1)
+        tokens2 = self.tokenizer.tokenize(line2)
+        num_1tokens = min(self.context_size - 2, len(tokens1))
+        all_tokens = [self.tokenizer.cls_token, *(tokens1[:num_1tokens]), self.tokenizer.sep_token]
+        num_2tokens = min(self.context_size - len(all_tokens), len(tokens2))
+        middle_pad_amount = self.context_size - len(all_tokens) - num_2tokens
+        random_ids = random.choices(list(self.tokenizer.get_vocab().values()), k=middle_pad_amount)
+        all_tokens.extend(self.tokenizer.convert_ids_to_tokens(random_ids))
+        all_tokens.extend(tokens2[:num_2tokens])
+        assert len(all_tokens) == self.context_size, f'len(all_tokens) = {len(all_tokens)}, ' \
+                                                     f'context_size = {self.context_size}'
+        attention_mask = torch.ones((len(all_tokens),))[None, :].long()
+        rand_mask = torch.rand(len(all_tokens)) < self.mask_prob
+        targets = torch.tensor(self.tokenizer.convert_tokens_to_ids(all_tokens)).long()
+        input_ids = torch.masked_fill(targets, rand_mask, self.tokenizer.mask_token_id)
+        return {
+            'input_ids': input_ids,
+            'attention_mask': attention_mask,
+            'targets': targets,
+            'mask': rand_mask,
+        }

@@ -1,3 +1,0 @@
-defaults:
-  - tokenizer: wordpiece
-  - _self_

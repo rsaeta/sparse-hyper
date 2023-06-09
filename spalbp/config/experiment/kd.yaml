@@ -1,0 +1,8 @@
+defaults:
+  - base_experiment
+  - data: wik8
+type: knowledge_distillation_mlm
+context_size: 256
+wandb_project: kd
+teacher_model: bert-base-uncased
+mask_prob: 0.15
