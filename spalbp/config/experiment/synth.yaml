@@ -6,5 +6,6 @@ defaults:
 type: simple_synthetic_mlm
 context_size: 256
 data_source: synthetic
+num_classes: 32000
 wandb_project: sparse_transformer_synth
 offset: 70
