@@ -57,11 +57,15 @@ def _train(cfg: RunConfig):
         flattened_targets = batch['targets'].view(-1)
         flattened_idx = flattened_mask.nonzero().squeeze()
 
-        kl_loss = torch.nn.functional.kl_div(torch.nn.functional.log_softmax(flattened_logits, dim=-1),
-                                             torch.nn.functional.softmax(flattened_teacher_logits, dim=-1),
+        fflogits = flattened_logits[flattened_idx]
+        ffteacher_logits = flattened_teacher_logits[flattened_idx]
+        fftargets = flattened_targets[flattened_idx]
+
+        kl_loss = torch.nn.functional.kl_div(torch.nn.functional.log_softmax(fflogits, dim=-1),
+                                             torch.nn.functional.softmax(ffteacher_logits, dim=-1),
                                              reduction='batchmean')
 
-        true_loss = torch.nn.functional.cross_entropy(flattened_logits[flattened_idx], flattened_targets[flattened_idx])
+        true_loss = torch.nn.functional.cross_entropy(fflogits, fftargets, reduction='mean')
         loss = kl_loss + true_loss + aux_loss
         accuracy = (flattened_logits[flattened_idx].argmax(dim=-1) == flattened_targets[flattened_idx]).float().mean()
         to_log = {'loss': loss.item(),
