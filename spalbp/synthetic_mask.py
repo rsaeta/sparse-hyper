@@ -66,6 +66,8 @@ def _train(cfg: RunConfig):
     optimizer, scheduler = learners(model, cfg)
     tokens_seen = 0
     train_cfg = cfg.experiment.training
+    if cfg.experiment.watch_model:
+        wandb.watch(model)
     for i in range(train_cfg.num_batches):
         model.train()
         optimizer.zero_grad()

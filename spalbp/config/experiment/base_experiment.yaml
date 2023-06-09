@@ -7,4 +7,5 @@ random_seed: 42
 save_dir:  # None save dir
 load_dir:  # None load dir
 save_last: true
+watch_model: false
 wandb_project: ???
