@@ -63,7 +63,7 @@ class NativeAttention(nn.Module):
     def __init__(self, num_heads, emb):
         super().__init__()
         self.num_heads = num_heads
-        self.native_attention = nn.MultiheadAttention(emb, num_heads, batch_first=True)
+        self.native_attention = nn.MultiheadAttention(emb, num_heads)
 
     def forward(self, x: Tensor, attention_mask: Tensor) -> Tensor:
         b, c, e = attention_mask.shape
@@ -71,7 +71,7 @@ class NativeAttention(nn.Module):
                      .expand(b, self.num_heads, c, e)
                      .reshape(b * self.num_heads, c, e)
                      .bool())
-
+        x = x.transpose(0, 1)  # (c, b, e) for multihead-attention that is not batch-first
         out, weights = self.native_attention(x, x, x, attn_mask=expanded, need_weights=True)
         return out
 
