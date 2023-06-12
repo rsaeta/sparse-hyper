@@ -39,6 +39,7 @@ class _OneDSparseAttention(_AttentionConfig):
     nadditional: int
     sigma_scale: float
     transformation_method: str
+    head_size: int
 
 
 @dataclass
