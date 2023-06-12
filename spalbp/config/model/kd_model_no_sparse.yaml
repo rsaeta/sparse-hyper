@@ -1,0 +1,24 @@
+defaults:
+  #- t_blocks@_t_block_dict.t_block0: base_t_block
+  #- t_blocks@_t_block_dict.t_block1: base_t_block
+  - tokenizer: wordpiece
+  - _self_
+
+t_blocks:
+  - embedding_dim: ${model.embedding_dim}
+    ff_hidden_mult: 4
+    dropout: 0.0
+    repeat: 16
+    attention:
+      emb: ${model.embedding_dim}
+      heads: 4
+      context: ${experiment.context_size}
+      head_size: 16
+      attention_type: sliding-window-with-global
+      window_size: 8
+
+
+type: transformer
+embedding_dim: 64
+context_size: ${experiment.context_size}
+positional_encoding_type: sinusoidal
