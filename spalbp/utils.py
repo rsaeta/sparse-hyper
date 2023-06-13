@@ -218,7 +218,7 @@ class MaskedLMDataset(torch.utils.data.Dataset):
 
     def __getitem__(self, item):
         line1 = self.ds[item]['text']
-        line2 = self.ds[item + 1]['text']
+        line2 = self.ds[(item+1) % len(self)]['text']
 
         tokens1 = self.tokenizer.tokenize(line1)
         tokens2 = self.tokenizer.tokenize(line2)
