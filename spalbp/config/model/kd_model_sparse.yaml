@@ -1,0 +1,49 @@
+defaults:
+  #- t_blocks@_t_block_dict.t_block0: base_t_block
+  #- t_blocks@_t_block_dict.t_block1: base_t_block
+  - tokenizer: wordpiece
+  - _self_
+
+t_blocks:
+  - embedding_dim: ${model.embedding_dim}
+    ff_hidden_mult: 4
+    dropout: 0.0
+    repeat: 8
+    attention:
+      emb: 64
+      head_size: 16
+      window_size: 8
+      heads: 4
+      context: ${experiment.context_size}
+      attention_type: sliding-window-with-global
+  - embedding_dim: ${model.embedding_dim}
+    ff_hidden_mult: 4
+    dropout: 0.0
+    repeat: 1
+    attention:
+      emb: 64
+      attention_type: sparse
+      head_size: 16
+      heads: 4
+      k: 8
+      gadditional: 4
+      nadditional: 2
+      sigma_scale: 1.0
+      transformation_method: sigmoid
+      context: ${experiment.context_size}
+      hyper_hidden_dim: 128
+  - embedding_dim: ${model.embedding_dim}
+    ff_hidden_mult: 4
+    dropout: 0.0
+    repeat: 1
+    attention:
+      context: ${experiment.context_size}
+      attention_type: sliding-window-with-global
+      emb: 64
+      head_size: 16
+      heads: 4
+      window_size: 8
+type: transformer
+embedding_dim: 64
+context_size: ${experiment.context_size}
+positional_encoding_type: sinusoidal

@@ -73,7 +73,7 @@ class NativeAttention(nn.Module):
                      .bool())
         x = x.transpose(0, 1)  # (c, b, e) for multihead-attention that is not batch-first
         out, weights = self.native_attention(x, x, x, attn_mask=expanded, need_weights=True)
-        return out
+        return out.transpose(0, 1)  # (b, c, e)
 
 
 class EasySlidingWindowAttention(NativeAttention):

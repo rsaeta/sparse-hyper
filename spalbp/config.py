@@ -30,6 +30,7 @@ class TrainingConfig:
     log_every: int
     save_every: int
     save_last: bool
+    num_epochs: int = 1
 
 
 @dataclass
@@ -74,7 +75,8 @@ class SynthMaskExperimentConfig(ExperimentConfig):
 @dataclass
 class KnowledgeDistillationExperiment(ExperimentConfig):
     teacher_model: str
-    mlm_prob: float
+    mask_prob: float
+    true_loss_weight: float
 
 
 @dataclass

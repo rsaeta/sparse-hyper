@@ -6,3 +6,4 @@ context_size: 256
 wandb_project: kd
 teacher_model: bert-base-uncased
 mask_prob: 0.15
+true_loss_weight: 0.75
