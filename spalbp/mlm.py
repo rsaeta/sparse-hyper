@@ -60,13 +60,13 @@ def _train(cfg: RunConfig):
             if 'WANDB_MODE' in os.environ:
                 if i % train_cfg.log_every == 0:
                     print(f'Batch {i} : {to_log}')
-                wandb.log(to_log, step=(epoch*len(dataloader)+i))
-                loss.backward()
-                torch.nn.utils.clip_grad_norm_(model.parameters(), train_cfg.grad_clipping_value)
-                optimizer.step()
-                scheduler.step()
-                if i % train_cfg.save_every == 0 and cfg.experiment.save_dir is not None:
-                    save_model(cfg, model, optimizer, scheduler, i // train_cfg.save_every)
+            wandb.log(to_log, step=(epoch*len(dataloader)+i))
+            loss.backward()
+            torch.nn.utils.clip_grad_norm_(model.parameters(), train_cfg.grad_clipping_value)
+            optimizer.step()
+            scheduler.step()
+            if i % train_cfg.save_every == 0 and cfg.experiment.save_dir is not None:
+                save_model(cfg, model, optimizer, scheduler, i // train_cfg.save_every)
 
 
 @hydra.main(version_base=None, config_path='config', config_name='masked_language_modeling')
