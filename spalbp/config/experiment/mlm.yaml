@@ -1,0 +1,7 @@
+defaults:
+  - base_experiment
+  - data: wik8
+type: vanilla_mlm
+context_size: 512
+wandb_project: mlm
+mask_prob: 0.15
