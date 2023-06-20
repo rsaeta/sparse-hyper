@@ -57,9 +57,8 @@ class _OneDimensionalSparseAttention(nn.Module):
         # For each point (self.k), we expect to sample the 2**rank closest points from the first set of sampling,
         # then self.gadditional globally-sampled indices, and self.nadditional neighborhood-sampled indices.
         num_points = self.k * (2 ** rank + ((self.gadditional + self.nadditional) if self.training else 0))
-        assert indices.size() == (
-        batch, self.n_heads, context, num_points, 1), f'Expected size {(batch, context, num_points, 1)}. ' \
-                                                      f'Got {indices.size()}'
+        assert indices.size() == (batch, self.n_heads, context, num_points, 1), \
+            f'Expected size {(batch, self.n_heads, context, num_points, 1)}. Got {indices.size()}'
         densities = sparse.densities(indices_fl, means, sigmas).clone()  # (B, H, C, P, self.k)
         duplicates = util.nduplicates(indices).to(torch.bool)  # (B, C, P) boolean mask of duplicates all-but-one
         densities[duplicates, :] = 0  # Removes all duplicates
@@ -147,10 +146,11 @@ class NonadaptiveSparseAttention(_OneDimensionalSparseAttention):
 
     def hyper(self, x: torch.Tensor):
         b, c, e = x.size()
+        h = self.n_heads
         k = self.k
-        means = self.pmeans[None, :, :, :].expand(b, c, k, 1)
-        sigmas = self.psigmas[None, :, :].expand(b, c, k)
-        values = self.pvalues[None, None, :].expand(b, c, k)
+        means = self.pmeans[None, :, :, :].expand(b, h, c, k, 1)
+        sigmas = self.psigmas[None, :, :].expand(b, h, c, k)
+        values = self.pvalues[None, None, :].expand(b, h, c, k)
 
         means = sparse.transform_means(means, (c,), method=self.transformation_method)
         sigmas = sparse.transform_sigmas(sigmas, (c,)) * self.sigma_scale
