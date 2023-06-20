@@ -31,15 +31,15 @@ def _train(cfg: RunConfig):
     optimizer, scheduler = learners(model, cfg)
     tokens_seen = 0
     train_cfg = cfg.experiment.training
-    data_sample_function = lambda: random_sample_simple(cfg.experiment.training.batch_size, cfg.experiment.context_size) \
+    data_sample_function = (lambda: random_sample_simple(cfg.experiment.training.batch_size, cfg.experiment.context_size)) \
         if cfg.experiment.data_gen == 'simple' \
-        else lambda: random_sample_data2(cfg.experiment.training.batch_size, cfg.experiment.context_size, cfg.experiment.offset)
+        else (lambda: random_sample_data2(cfg.experiment.training.batch_size, cfg.experiment.context_size, cfg.experiment.offset))
     if cfg.experiment.watch_model:
         wandb.watch(model)
     for i in range(train_cfg.num_batches):
         model.train()
         optimizer.zero_grad()
-
+        breakpoint()
         data_sample = data_sample_function()
         seqs_inputs, attention_masks, targets, mask = data_sample
 
