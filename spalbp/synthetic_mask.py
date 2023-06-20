@@ -12,10 +12,7 @@ import torch
 import torch.nn.functional as F
 import wandb
 from omegaconf import OmegaConf
-from lib.models import GeneratingTransformer
 from utils import (
-    cuda,
-    device,
     setup,
     learners,
     save_model,
@@ -23,41 +20,9 @@ from utils import (
     post_process_cfg,
     get_model,
 )
-
-
-def random_sample_data2(batch_size, seq_len, offset=70):
-    seqs_inputs = torch.randint(size=(batch_size, seq_len), low=100, high=32000)
-    attention_masks = torch.ones_like(seqs_inputs)
-    mask_token = 4
-    mask = torch.rand((batch_size, seq_len)) > 0.05
-    # mask = torch.ones((batch_size, seq_len))
-    # mask[:, 45:55] = 0
-    mask = mask.bool()
-    targets = seqs_inputs.detach().clone()
-    # Modify the input so that the masked token positions are filled with [MASK] tokens
-    # and the token at position mask + offset is the target token.
-    for b, m_i in (~mask).nonzero():
-        seqs_inputs[b] = apply_offset_mask(seqs_inputs[b], m_i, mask_token, offset)
-    # Expand the attention mask to a symmetric matrix
-    attention_masks = attention_masks[:, None, :].expand(-1, seq_len, -1)
-    if cuda:
-        seqs_inputs = seqs_inputs.cuda()
-        attention_masks = attention_masks.cuda()
-        targets = targets.cuda()
-        mask = mask.cuda()
-    return seqs_inputs, attention_masks, targets, mask
-
-
-def apply_offset_mask(seq_input, i, mask_token, offset):
-    """
-    This function replaces seq_input[i] with the mask_token and replaces
-    seq_input[i+offset] with the target token.
-    """
-    target_token = seq_input[i].item()
-    seq_input[i] = mask_token
-    new_pos = (i + offset) % seq_input.size(0)
-    seq_input[new_pos] = target_token
-    return seq_input
+from synth_data_gen import (
+    random_sample_data2, random_sample_simple
+)
 
 
 def _train(cfg: RunConfig):
@@ -66,13 +31,16 @@ def _train(cfg: RunConfig):
     optimizer, scheduler = learners(model, cfg)
     tokens_seen = 0
     train_cfg = cfg.experiment.training
+    data_sample_function = (lambda: random_sample_simple(cfg.experiment.training.batch_size, cfg.experiment.context_size)) \
+        if cfg.experiment.data_gen == 'simple' \
+        else (lambda: random_sample_data2(cfg.experiment.training.batch_size, cfg.experiment.context_size, cfg.experiment.offset))
     if cfg.experiment.watch_model:
         wandb.watch(model)
     for i in range(train_cfg.num_batches):
         model.train()
         optimizer.zero_grad()
-
-        data_sample = random_sample_data2(train_cfg.batch_size, cfg.experiment.context_size, cfg.experiment.offset)
+        breakpoint()
+        data_sample = data_sample_function()
         seqs_inputs, attention_masks, targets, mask = data_sample
 
         logits, aux_loss = model(seqs_inputs, attention_masks)

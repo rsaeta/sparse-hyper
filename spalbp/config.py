@@ -70,6 +70,7 @@ class ExperimentConfig:
 @dataclass
 class SynthMaskExperimentConfig(ExperimentConfig):
     offset: int
+    data_gen: str
 
 
 @dataclass
