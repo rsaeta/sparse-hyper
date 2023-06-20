@@ -10,3 +10,4 @@ type: transformer
 embedding_dim: 64
 context_size: ${experiment.context_size}
 positional_encoding_type: sinusoidal
+vocab_size: 32000
