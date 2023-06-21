@@ -25,8 +25,8 @@ from utils import (
 )
 
 
-def random_sample_data2(batch_size, seq_len, offset=70):
-    seqs_inputs = torch.randint(size=(batch_size, seq_len), low=100, high=32000)
+def random_sample_data2(batch_size, seq_len, low, high, offset=70):
+    seqs_inputs = torch.randint(size=(batch_size, seq_len), low=low, high=high)
     attention_masks = torch.ones_like(seqs_inputs)
     mask_token = 4
     mask = torch.rand((batch_size, seq_len)) > 0.05
@@ -68,11 +68,14 @@ def _train(cfg: RunConfig):
     train_cfg = cfg.experiment.training
     if cfg.experiment.watch_model:
         wandb.watch(model)
+
     for i in range(train_cfg.num_batches):
         model.train()
         optimizer.zero_grad()
 
-        data_sample = random_sample_data2(train_cfg.batch_size, cfg.experiment.context_size, cfg.experiment.offset)
+        data_sample = random_sample_data2(
+        train_cfg.batch_size, cfg.experiment.context_size, 5, cfg.experiment.num_classes, cfg.experiment.offset
+        )
         seqs_inputs, attention_masks, targets, mask = data_sample
 
         logits, aux_loss = model(seqs_inputs, attention_masks)
@@ -97,7 +100,7 @@ def _train(cfg: RunConfig):
             model.eval()
             with torch.no_grad():
                 eval_sample = random_sample_data2(
-                    train_cfg.batch_size, cfg.experiment.context_size, cfg.experiment.offset
+                    train_cfg.batch_size, cfg.experiment.context_size, 5, cfg.experiment.num_classes, cfg.experiment.offset
                 )
                 seqs_inputs, attention_masks, targets, mask = eval_sample
                 logits, _ = model(seqs_inputs, attention_masks)

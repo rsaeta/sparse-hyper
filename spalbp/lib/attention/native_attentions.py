@@ -90,7 +90,9 @@ class EasySlidingWindowAttention2(nn.Module):
         self.local_attention = LocalAttention(
             dim=self.head_size,
             window_size=window_size,
-            dropout=0.0)
+            dropout=0.0,
+            causal=False,
+            use_rotary_pos_emb=False)
         self.to_keys = nn.Linear(emb, self.head_size*heads, bias=False)
         self.to_queries = nn.Linear(emb, self.head_size*heads, bias=False)
         self.to_values = nn.Linear(emb, self.head_size*heads, bias=False)
