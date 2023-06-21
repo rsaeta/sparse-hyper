@@ -1,6 +1,6 @@
 import torch
 from torch import nn, Tensor
-
+from local_attention import LocalAttention
 from spalbp.lib.attention.config import MultiHeadAttentionConfig, SlidingWindowConfig
 
 
@@ -74,6 +74,36 @@ class NativeAttention(nn.Module):
         x = x.transpose(0, 1)  # (c, b, e) for multihead-attention that is not batch-first
         out, weights = self.native_attention(x, x, x, attn_mask=expanded, need_weights=True)
         return out.transpose(0, 1)  # (b, c, e)
+
+
+class EasySlidingWindowAttention2(nn.Module):
+    @classmethod
+    def from_config(cls, config: SlidingWindowConfig):
+        return cls(config.heads, config.emb, config.window_size)
+
+    def __init__(self, heads, emb, window_size):
+        super().__init__()
+        self.heads = heads
+        self.emb = emb
+        self.window_size = window_size
+        self.head_size = emb // heads
+        self.local_attention = LocalAttention(
+            dim=self.head_size,
+            window_size=window_size,
+            dropout=0.0)
+        self.to_keys = nn.Linear(emb, self.head_size*heads, bias=False)
+        self.to_queries = nn.Linear(emb, self.head_size*heads, bias=False)
+        self.to_values = nn.Linear(emb, self.head_size*heads, bias=False)
+        self.to_out = nn.Linear(self.head_size*heads, emb, bias=False)
+
+    def forward(self, x: Tensor, attn_mask: Tensor):
+        b, c, e = x.shape
+        keys = self.to_keys(x).view(b, c, self.heads, self.head_size).transpose(1, 2)  # (b, h, c, hs)
+        queries = self.to_queries(x).view(b, c, self.heads, self.head_size).transpose(1, 2)  # (b, h, c, hs)
+        values = self.to_values(x).view(b, c, self.heads, self.head_size).transpose(1, 2)  # (b, h, c, hs)
+        attended = self.local_attention(queries, keys, values, attn_mask)  # (b, h, c, hs)
+        out = self.to_out(attended.transpose(1, 2).reshape(b, c, e))  # (b, c, e)
+        return out
 
 
 class EasySlidingWindowAttention(NativeAttention):
