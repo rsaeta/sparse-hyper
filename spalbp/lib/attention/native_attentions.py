@@ -101,8 +101,9 @@ class EasySlidingWindowAttention2(nn.Module):
         keys = self.to_keys(x).view(b, c, self.heads, self.head_size).transpose(1, 2)  # (b, h, c, hs)
         queries = self.to_queries(x).view(b, c, self.heads, self.head_size).transpose(1, 2)  # (b, h, c, hs)
         values = self.to_values(x).view(b, c, self.heads, self.head_size).transpose(1, 2)  # (b, h, c, hs)
-        attended = self.local_attention(queries, keys, values, attn_mask)  # (b, h, c, hs)
-        out = self.to_out(attended.transpose(1, 2).reshape(b, c, e))  # (b, c, e)
+        attended = self.local_attention(queries, keys, values, attn_mask[:, 0, :].bool())  # (b, h, c, hs)
+        attended = attended.transpose(1, 2).contiguous().view(b, c, -1)  # (b, c, hs*h)
+        out = self.to_out(attended)  # (b, c, e)
         return out
 
 
