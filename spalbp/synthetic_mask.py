@@ -40,6 +40,7 @@ def random_sample_data2(batch_size, seq_len, low, high, offset=70):
         seqs_inputs[b] = apply_offset_mask(seqs_inputs[b], m_i, mask_token, offset)
     # Expand the attention mask to a symmetric matrix
     attention_masks = attention_masks[:, None, :].expand(-1, seq_len, -1)
+    mask = (seqs_inputs != mask_token).bool()
     if cuda:
         seqs_inputs = seqs_inputs.cuda()
         attention_masks = attention_masks.cuda()
@@ -73,9 +74,11 @@ def _train(cfg: RunConfig):
         model.train()
         optimizer.zero_grad()
 
-        data_sample = random_sample_data2(
-        train_cfg.batch_size, cfg.experiment.context_size, 5, cfg.experiment.num_classes, cfg.experiment.offset
-        )
+        data_sample = random_sample_data2(train_cfg.batch_size,
+                                          cfg.experiment.context_size,
+                                          5,
+                                          cfg.experiment.num_classes,
+                                          cfg.experiment.offset)
         seqs_inputs, attention_masks, targets, mask = data_sample
 
         logits, aux_loss = model(seqs_inputs, attention_masks)
@@ -108,7 +111,9 @@ def _train(cfg: RunConfig):
                 flattened_logits = logits.view(-1, num_classes)
                 flattened_targets = targets.view(-1)
                 flat_mask_idx = (~mask).view(-1).nonzero().view(-1)
-                loss = F.cross_entropy(flattened_logits[flat_mask_idx], flattened_targets[flat_mask_idx], reduction='mean')
+                loss = F.cross_entropy(flattened_logits[flat_mask_idx],
+                                       flattened_targets[flat_mask_idx],
+                                       reduction='mean')
             to_log = {'val_loss': loss.item()}
             if 'WANDB_MODE' in os.environ:
                 print(to_log)

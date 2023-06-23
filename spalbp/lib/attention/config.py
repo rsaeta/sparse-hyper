@@ -44,7 +44,7 @@ class _OneDSparseAttention(_AttentionConfig):
 
 @dataclass
 class NonAdaptiveSparseAttentionConfig(_OneDSparseAttention):
-    pass
+    means_init_method: str
 
 
 @dataclass

@@ -1,11 +1,12 @@
 from typing import Tuple
 import torch
 from torch import nn, Tensor
+import wandb
 
 from _context import sparse
 from sparse import util
 
-from spalbp.lib.attention.config import AdaptiveSparseAttentionConfig
+from spalbp.lib.attention.config import AdaptiveSparseAttentionConfig, NonAdaptiveSparseAttentionConfig
 
 
 class _OneDimensionalSparseAttention(nn.Module):
@@ -100,15 +101,22 @@ class _OneDimensionalSparseAttention(nn.Module):
         new_weights = new_weights.softmax(dim=-1)  # Normalize attention scores
         head_reps = gathered_values * new_weights.unsqueeze(-1)  # Weigh values by attention scores
         head_reps = head_reps.sum(dim=-2)  # Sum over weighted values [b, h, c, d]
-        united = head_reps.view(batch, context, -1)  # [b, c, h * d]
+        # united = head_reps.view(batch, context, -1)  # [b, c, h * d]
+        united = head_reps.transpose(1, 2).contiguous().view(batch, context, -1)  # [b, c, h * d]
         new_out = self.unify(united)  # [b, c, e]
+
+        attentions = torch.zeros(batch, self.n_heads, context, context, device=x.device)
+        attentions.scatter_add_(dim=3, index=indices.squeeze(-1),
+                                src=new_weights)
+        if output_attentions:
+            return new_out, attentions
         return new_out
 
 
 class NonadaptiveSparseAttention(_OneDimensionalSparseAttention):
 
     @classmethod
-    def from_config(cls, config: AdaptiveSparseAttentionConfig):
+    def from_config(cls, config: NonAdaptiveSparseAttentionConfig):
         return cls(config.emb,
                    config.context,
                    k=config.k,
@@ -116,7 +124,18 @@ class NonadaptiveSparseAttention(_OneDimensionalSparseAttention):
                    gadditional=config.gadditional,
                    nadditional=config.nadditional,
                    sigma_scale=config.sigma_scale,
-                   transformation_method=config.transformation_method)
+                   transformation_method=config.transformation_method,
+                   means_init_method=config.means_init_method)
+
+    @staticmethod
+    def _init_means(context: int, k: int, means_init_method: str):
+        if means_init_method == 'random':
+            means = torch.rand((context, k, 1))
+        elif means_init_method == 'uniform':
+            means = torch.linspace(0, context - 1, k).unsqueeze(-1)[None].expand(context, k, 1)
+        else:
+            raise ValueError(f'Unknown means initialization method: {means_init_method}')
+        return means
 
     def __init__(self,
                  emb: int,
@@ -127,9 +146,11 @@ class NonadaptiveSparseAttention(_OneDimensionalSparseAttention):
                  gadditional: int = 2,
                  nadditional: int = 2,
                  sigma_scale: float = 1.,
-                 transformation_method: str = 'sigmoid'):
+                 transformation_method: str = 'sigmoid',
+                 means_init_method: str = 'random'):
         super().__init__(emb, n_heads, k=k, gadditional=gadditional, nadditional=nadditional)
-        self.pmeans = torch.nn.Parameter(torch.rand((context_len, k, 1)))
+        means = self._init_means(context_len, k, means_init_method)
+        self.pmeans = torch.nn.Parameter(means)
         self.psigmas = torch.nn.Parameter(torch.rand((context_len, k)))
         # Non-learnabe
         self.register_buffer('pvalues', torch.ones(k))
@@ -139,9 +160,9 @@ class NonadaptiveSparseAttention(_OneDimensionalSparseAttention):
     def hyper(self, x: torch.Tensor):
         b, c, e = x.size()
         k = self.k
-        means = self.pmeans[None, :, :, :].expand(b, c, k, 1)
-        sigmas = self.psigmas[None, :, :].expand(b, c, k)
-        values = self.pvalues[None, None, :].expand(b, c, k)
+        means = self.pmeans[None, None, :, :, :].expand(b, self.n_heads, c, k, 1)
+        sigmas = self.psigmas[None, None, :, :].expand(b, self.n_heads, c, k)
+        values = self.pvalues[None, None, None, :].expand(b, self.n_heads, c, k)
 
         means = sparse.transform_means(means, (c,), method=self.transformation_method)
         sigmas = sparse.transform_sigmas(sigmas, (c,)) * self.sigma_scale
@@ -184,6 +205,18 @@ class UnknowingSparseAttention(_OneDimensionalSparseAttention):
 
 
 class KnowingSparseAttention(_OneDimensionalSparseAttention):
+
+    @classmethod
+    def from_config(cls, config: NonAdaptiveSparseAttentionConfig):
+        return cls(config.emb,
+                   config.context,
+                   n_heads=config.heads,
+                   gadditional=config.gadditional,
+                   nadditional=config.nadditional,
+                   sigma_scale=config.sigma_scale,
+                   k=config.k,
+                   transformation_method=config.transformation_method)
+
     def __init__(self,
                  emb: int,
                  context_len: int,
@@ -192,15 +225,13 @@ class KnowingSparseAttention(_OneDimensionalSparseAttention):
                  gadditional: int = 2,
                  nadditional: int = 2,
                  sigma_scale: float = 1.,
+                 k: int = 1,
                  transformation_method: str = 'modulo'):
-        k = 1
         super().__init__(emb, n_heads, k=k, gadditional=gadditional, nadditional=nadditional)
-
-        self.pmeans = torch.randint(100, 32000, (context_len, k, 1), device='cuda')
-        for i in range(45, 105):
-            self.pmeans[i, 0, 0] = i + 70
-
-        self.psigmas = torch.nn.Parameter(torch.rand((context_len, k)))
+        answers = torch.remainder(torch.arange(0, context_len, device='cuda') + 70, context_len).float()
+        self.pmeans = torch.randint(0, context_len, (n_heads, context_len, k, 1), device='cuda').float()
+        self.pmeans[0, :, 0, :] = answers[:, None]
+        self.psigmas = torch.nn.Parameter(torch.rand((n_heads, context_len, k)))
         # Non-learnabe
         self.register_buffer('pvalues', torch.ones(k))
         self.sigma_scale = sigma_scale
@@ -208,10 +239,10 @@ class KnowingSparseAttention(_OneDimensionalSparseAttention):
 
     def hyper(self, x: torch.Tensor):
         b, c, e = x.size()
-        k = self.k
-        means = self.pmeans[None, :, :, :].expand(b, c, k, 1)
-        sigmas = self.psigmas[None, :, :].expand(b, c, k)
-        values = self.pvalues[None, None, :].expand(b, c, k)
+        k, h = self.k, self.n_heads
+        means = self.pmeans[None].expand(b, h, c, k, 1)
+        sigmas = self.psigmas[None].expand(b, h, c, k)
+        values = self.pvalues[None, None, None, :].expand(b, h, c, k)
 
         means = sparse.transform_means(means, (c,), method=self.transformation_method)
         sigmas = sparse.transform_sigmas(sigmas, (c,)) * self.sigma_scale
@@ -277,4 +308,5 @@ class SparseSelfAttention(_OneDimensionalSparseAttention):
         # means = diags - torch.nn.functional.softplus(means)
         means = sparse.transform_means(means, (context_len,))
         sigmas = sparse.transform_sigmas(sigmas, (context_len,))
+
         return means, sigmas, values
