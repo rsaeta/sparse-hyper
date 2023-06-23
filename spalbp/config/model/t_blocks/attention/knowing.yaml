@@ -1,5 +1,5 @@
 defaults:
   - base_sparse
-attention_type: simple_sparse
-means_init_method: uniform
+attention_type: knowing
 transformation_method: modulo
+k: 2

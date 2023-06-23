@@ -1,52 +1,106 @@
+import os.path
+
 import torch
 from pathlib import Path
 from omegaconf import OmegaConf
 from lib.models import GeneratingTransformer
 from synthetic_mask import random_sample_data2
+from plot_utils import quickplot
+from utils import find_latest_model
 
 
-def interact(dir: Path):
-    conf_file = dir / 'config.yaml'
-    model_file = dir / 'model.pt'
+def load_config(dip: Path):
+    conf_file = dip / 'config.yaml'
     cfg = OmegaConf.load(conf_file)
-    sd = torch.load(model_file, map_location=torch.device('cuda'))
+    return cfg
 
+
+def load_model(cfg, dip: Path, model_name: str = None):
+    if model_name is None:
+        model_file = find_latest_model(dip)
+    else:
+        model_file = dip / model_name
+    sd = torch.load(model_file, map_location=torch.device('cuda'))
     model = GeneratingTransformer(cfg.model)
     model.load_state_dict(sd)
     model.to('cuda')
+    return model
 
-    sample = random_sample_data2(10, cfg.experiment.context_size, cfg.experiment.offset)
+
+def load_dir(dip: Path, model_name: str = None):
+    cfg = load_config(dip)
+    model = load_model(cfg, dip, model_name)
+    return cfg, model
+
+
+def get_attentions(model, seqs_inputs, attention_masks):
+    attended = model.embed(seqs_inputs)
+    for t_block in model.t_blocks[:-1]:
+        attended = t_block.attend(attended, attention_masks)
+    _, attentions = model.t_blocks[-1].attend(attended, attention_masks, output_attentions=True)
+    return attentions
+
+
+def run_thing(cfg: OmegaConf, model):
+    sample = random_sample_data2(10, cfg.experiment.context_size, 5, cfg.experiment.num_classes, cfg.experiment.offset)
     seqs_inputs, attention_masks, targets, mask = map(lambda x: x.to('cuda'), sample)
-
+    model.t_blocks[0].attend.nadditional = 4
     model.eval()
     eval_logits, _ = model(seqs_inputs, attention_masks)
+    eval_attentions = get_attentions(model, seqs_inputs, attention_masks)
 
     model.train()
     train_logits, _ = model(seqs_inputs, attention_masks)
+    train_attentions = get_attentions(model, seqs_inputs, attention_masks)
 
     num_classes = eval_logits.size(-1)
     eval_logits = eval_logits.view(-1, num_classes)
     train_logits = train_logits.view(-1, num_classes)
     targets = targets.view(-1)
-    mask = mask.view(-1)
-    mask_idx = (~mask).nonzero().squeeze(-1)
+
+    #  flat_mask = mask.view(-1)
+
+    flat_mask = (seqs_inputs != 4).view(-1)
+    mask_idx = (~flat_mask).nonzero().squeeze(-1)
 
     eval_logits = eval_logits[mask_idx]
     train_logits = train_logits[mask_idx]
     targets = targets[mask_idx]
 
+    train_loss = torch.nn.functional.cross_entropy(train_logits, targets, reduction='none')
+    eval_loss = torch.nn.functional.cross_entropy(eval_logits, targets, reduction='none')
+
     eval_accuracy = (eval_logits.argmax(-1) == targets).float().mean().item()
     train_accuracy = (train_logits.argmax(-1) == targets).float().mean().item()
 
-    breakpoint()
+    model.train()
 
 
-
+    #attended2 = model.t_blocks[1].attend(attended1, attention_masks)
+    #attended3, attentions = model.t_blocks[2].attend(attended2, attention_masks, output_attentions=True)
+    # breakpoint()
+    return train_attentions, eval_attentions
 
 
 def main():
-    interact(Path('models/foobar_lets_go_k_1_big_g'))
+    cfg, model = load_dir(Path('models/fixing_mask_simple_sparse'))
+    run_thing(cfg, model)
+
+
+def plot_attentions_over_time(dip: Path):
+    cfg = load_config(dip)
+    i = 0
+    model_name = f'checkpoint_{i}_model.pt'
+    while os.path.exists(dip / model_name):
+        model = load_model(cfg, dip, model_name)
+        train_attentions, eval_attentions = run_thing(cfg, model)
+        quickplot(train_attentions[0, 0], dip / f'train_attentions_{i}')
+        quickplot(eval_attentions[0, 0], dip / f'eval_attentions_{i}')
+        i += 10
+        model_name = f'checkpoint_{i}_model.pt'
 
 
 if __name__ == '__main__':
-    main()
+    # cfg, model = load_dir(Path('models/fixing_mask_simple_sparse'))
+    # run_thing(cfg, model)
+    plot_attentions_over_time(Path('models/fixing_mask_simple_sparse'))

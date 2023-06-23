@@ -6,7 +6,7 @@ from .dynamic_sparse_attentions import (
 from .bigbird import BigBirdBlockSparseAttention
 from .misc_attention import AlphaEntmax
 from .native_attentions import (
-    MultiHeadAttention, NativeAttention, EasySlidingWindowAttention, SlidingWindowWithGlobalAttention
+    MultiHeadAttention, NativeAttention, EasySlidingWindowAttention2, SlidingWindowWithGlobalAttention
 )
 from .clustered_attention import ClusteredAttention
 
@@ -16,11 +16,11 @@ type_to_classes = {
     'dense': (config.MultiHeadAttentionConfig, MultiHeadAttention),
     'native': (config.MultiHeadAttentionConfig, NativeAttention),
     'sparse': (config.AdaptiveSparseAttentionConfig, SparseSelfAttention),
-    'knowing': (config.AdaptiveSparseAttentionConfig, KnowingSparseAttention),
-    'unknowing': (config.AdaptiveSparseAttentionConfig, UnknowingSparseAttention),
+    'knowing': (config.NonAdaptiveSparseAttentionConfig, KnowingSparseAttention),
+    'unknowing': (config.NonAdaptiveSparseAttentionConfig, UnknowingSparseAttention),
     'simple_sparse': (config.NonAdaptiveSparseAttentionConfig, NonadaptiveSparseAttention),
     'entmax': (config.AlphaEntmaxAttentionConfig, AlphaEntmax),
-    'sliding-window': (config.SlidingWindowConfig, EasySlidingWindowAttention),
+    'sliding-window': (config.SlidingWindowConfig, EasySlidingWindowAttention2),
     'bigbird': (config.BigBirdConfig, BigBirdBlockSparseAttention),
     'sliding-window-with-global': (config.SlidingWindowConfig, SlidingWindowWithGlobalAttention),
     'clustered': (config.ClusteredAttentionConfig, ClusteredAttention),
