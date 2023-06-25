@@ -3,3 +3,5 @@ defaults:
   - _self_
 attention_type: sparse
 hyper_hidden_dim: 128
+remove_rand_on_eval: true
+means_init_method: random

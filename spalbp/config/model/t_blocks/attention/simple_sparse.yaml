@@ -1,5 +1,5 @@
 defaults:
   - base_sparse
 attention_type: simple_sparse
-means_init_method: uniform
-transformation_method: modulo
+means_init_method: random
+transformation_method: sigmoid

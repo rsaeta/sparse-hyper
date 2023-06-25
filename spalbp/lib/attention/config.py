@@ -40,6 +40,7 @@ class _OneDSparseAttention(_AttentionConfig):
     sigma_scale: float
     transformation_method: str
     head_size: int
+    remove_rand_on_eval: bool
 
 
 @dataclass

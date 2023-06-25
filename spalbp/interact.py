@@ -78,7 +78,7 @@ def run_thing(cfg: OmegaConf, model):
 
     #attended2 = model.t_blocks[1].attend(attended1, attention_masks)
     #attended3, attentions = model.t_blocks[2].attend(attended2, attention_masks, output_attentions=True)
-    # breakpoint()
+    #breakpoint()
     return train_attentions, eval_attentions
 
 
@@ -89,7 +89,7 @@ def main():
 
 def plot_attentions_over_time(dip: Path):
     cfg = load_config(dip)
-    i = 0
+    i = 1
     model_name = f'checkpoint_{i}_model.pt'
     while os.path.exists(dip / model_name):
         model = load_model(cfg, dip, model_name)
@@ -101,6 +101,6 @@ def plot_attentions_over_time(dip: Path):
 
 
 if __name__ == '__main__':
-    # cfg, model = load_dir(Path('models/fixing_mask_simple_sparse'))
-    # run_thing(cfg, model)
-    plot_attentions_over_time(Path('models/fixing_mask_simple_sparse'))
+    # cfg, model = load_dir(Path('models/synth_hydra_convolv_then_sparse_super_small_vocab_1'))
+    #run_thing(cfg, model)
+    plot_attentions_over_time(Path('models/fixing_mask_simple_sparse_third_even_init'))

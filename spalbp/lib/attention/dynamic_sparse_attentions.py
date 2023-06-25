@@ -18,12 +18,13 @@ class _OneDimensionalSparseAttention(nn.Module):
                  head_size: int = 16,
                  k: int = 4,
                  gadditional: int = 1,
-                 nadditional: int = 4):
+                 nadditional: int = 4,
+                 remove_rand_on_eval: bool = True):
         super().__init__()
         self.emb = emb
         self.n_heads = n_heads
         self.k = k
-        self.gadditional = gadditional
+        self.max_gadditional = gadditional
         self.nadditional = nadditional
         self.head_size = head_size
 
@@ -31,6 +32,7 @@ class _OneDimensionalSparseAttention(nn.Module):
         self.to_queries = nn.Linear(emb, head_size * n_heads, bias=False)
         self.to_values = nn.Linear(emb, head_size * n_heads, bias=False)
         self.unify = nn.Linear(head_size * n_heads, emb)
+        self.remove_rand_on_eval = remove_rand_on_eval
 
         self.register_buffer('mvalues', torch.ones((k,)))
 
@@ -52,8 +54,9 @@ class _OneDimensionalSparseAttention(nn.Module):
         batch, context, emb = x.size()  # (B, C, E)
         rank = means.size(-1)
         indices: Tensor = sparse.ngenerate(means,
-                                           self.gadditional if self.training else 0,  # For evaluation, only get nearest
-                                           self.nadditional if self.training else 0,  # index for each point
+                                           # For evaluation, only get nearest
+                                           self.gadditional if self.training or not self.remove_rand_on_eval else 0,
+                                           self.nadditional if self.training or not self.remove_rand_on_eval else 0,  # index for each point
                                            rng=(context,),
                                            relative_range=(3,),
                                            cuda='cuda' in util.d(x))  # (B, H, C, P, 1)
@@ -67,7 +70,7 @@ class _OneDimensionalSparseAttention(nn.Module):
         indices_fl = indices.float()
         # For each point (self.k), we expect to sample the 2**rank closest points from the first set of sampling,
         # then self.gadditional globally-sampled indices, and self.nadditional neighborhood-sampled indices.
-        num_points = self.k * (2 ** rank + ((self.gadditional + self.nadditional) if self.training else 0))
+        num_points = self.k * (2 ** rank + ((self.gadditional + self.nadditional) if self.training or not self.remove_rand_on_eval else 0))
         assert indices.size() == (
             batch, self.n_heads, context, num_points, 1), f'Expected size {(batch, context, num_points, 1)}. ' \
                                                           f'Got {indices.size()}'
@@ -125,14 +128,15 @@ class NonadaptiveSparseAttention(_OneDimensionalSparseAttention):
                    nadditional=config.nadditional,
                    sigma_scale=config.sigma_scale,
                    transformation_method=config.transformation_method,
-                   means_init_method=config.means_init_method)
+                   means_init_method=config.means_init_method,
+                   remove_rand_on_eval=config.remove_rand_on_eval)
 
     @staticmethod
     def _init_means(context: int, k: int, means_init_method: str):
         if means_init_method == 'random':
-            means = torch.rand((context, k, 1))
+            means = torch.rand((context, k, 1)) * 2 - 1
         elif means_init_method == 'uniform':
-            means = torch.linspace(0, context - 1, k).unsqueeze(-1)[None].expand(context, k, 1)
+            means = torch.linspace(0, context - 1, k+2)[None, 1:-1, None].expand(context, k, 1).clone()
         else:
             raise ValueError(f'Unknown means initialization method: {means_init_method}')
         return means
@@ -147,8 +151,11 @@ class NonadaptiveSparseAttention(_OneDimensionalSparseAttention):
                  nadditional: int = 2,
                  sigma_scale: float = 1.,
                  transformation_method: str = 'sigmoid',
-                 means_init_method: str = 'random'):
-        super().__init__(emb, n_heads, k=k, gadditional=gadditional, nadditional=nadditional)
+                 means_init_method: str = 'random',
+                 remove_rand_on_eval: bool = False):
+        super().__init__(
+            emb, n_heads, k=k, gadditional=gadditional, nadditional=nadditional, remove_rand_on_eval=remove_rand_on_eval
+        )
         means = self._init_means(context_len, k, means_init_method)
         self.pmeans = torch.nn.Parameter(means)
         self.psigmas = torch.nn.Parameter(torch.rand((context_len, k)))
@@ -260,7 +267,8 @@ class SparseSelfAttention(_OneDimensionalSparseAttention):
                    hidden=config.hyper_hidden_dim,
                    n_heads=config.heads,
                    gadditional=config.gadditional,
-                   nadditional=config.nadditional)
+                   nadditional=config.nadditional,
+                   remove_rand_on_eval=config.remove_rand_on_eval)
 
     def __init__(self,
                  emb: int,
@@ -271,13 +279,15 @@ class SparseSelfAttention(_OneDimensionalSparseAttention):
                  hidden: int = 4,
                  n_heads: int = 4,
                  gadditional: int = 2,
-                 nadditional: int = 2):
+                 nadditional: int = 2,
+                 remove_rand_on_eval: bool = True):
         super().__init__(emb,
                          n_heads,
                          head_size=head_size,
                          k=k,
                          gadditional=gadditional,
-                         nadditional=nadditional)
+                         nadditional=nadditional,
+                         remove_rand_on_eval=remove_rand_on_eval)
         self.context_len = context_len
         self.to_param = nn.Sequential(
             nn.Linear(emb, hidden),

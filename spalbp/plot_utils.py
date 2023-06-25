@@ -5,6 +5,7 @@ import matplotlib.pyplot as plt
 def quickplot(attentions: torch.Tensor, filename=None):
     attentions = attentions.detach().cpu()
     plt.matshow(attentions)
+    plt.colorbar()
     if filename is not None:
         plt.savefig(filename)
         plt.close()
