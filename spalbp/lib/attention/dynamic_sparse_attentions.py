@@ -9,6 +9,9 @@ from sparse import util
 from spalbp.lib.attention.config import AdaptiveSparseAttentionConfig, NonAdaptiveSparseAttentionConfig
 
 
+
+
+
 class _OneDimensionalSparseAttention(nn.Module):
 
     def __init__(self,
@@ -24,7 +27,7 @@ class _OneDimensionalSparseAttention(nn.Module):
         self.emb = emb
         self.n_heads = n_heads
         self.k = k
-        self.max_gadditional = gadditional
+        self.gadditional = gadditional
         self.nadditional = nadditional
         self.head_size = head_size
 
