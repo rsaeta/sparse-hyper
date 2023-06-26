@@ -1,7 +1,6 @@
 from typing import Tuple
 import torch
 from torch import nn, Tensor
-import wandb
 
 from _context import sparse
 from sparse import util
@@ -41,8 +40,6 @@ class _OneDimensionalSparseAttention(nn.Module):
         self.n_heads = n_heads
         self.k = k
         self.gadditional = StepGadditionalDecayer(gadditional, 50_000, 0.9)
-        # self.max_gadditional = gadditional
-        # self.gadditional = gadditional
         self.nadditional = nadditional
         self.head_size = head_size
 
