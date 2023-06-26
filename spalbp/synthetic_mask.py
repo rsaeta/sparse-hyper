@@ -12,10 +12,8 @@ import torch
 import torch.nn.functional as F
 import wandb
 from omegaconf import OmegaConf
-from lib.models import GeneratingTransformer
 from utils import (
     cuda,
-    device,
     setup,
     learners,
     save_model,
@@ -30,8 +28,6 @@ def random_sample_data2(batch_size, seq_len, low, high, offset=70):
     attention_masks = torch.ones_like(seqs_inputs)
     mask_token = 4
     mask = torch.rand((batch_size, seq_len)) > 0.05
-    # mask = torch.ones((batch_size, seq_len))
-    # mask[:, 45:55] = 0
     mask = mask.bool()
     targets = seqs_inputs.detach().clone()
     # Modify the input so that the masked token positions are filled with [MASK] tokens
@@ -74,11 +70,13 @@ def _train(cfg: RunConfig):
         model.train()
         optimizer.zero_grad()
 
-        data_sample = random_sample_data2(train_cfg.batch_size,
-                                          cfg.experiment.context_size,
-                                          5,
-                                          cfg.experiment.num_classes,
-                                          cfg.experiment.offset)
+        data_sample = random_sample_data2(
+            train_cfg.batch_size,
+            cfg.experiment.context_size,
+            5,
+            cfg.experiment.num_classes,
+            cfg.experiment.offset,
+        )
         seqs_inputs, attention_masks, targets, mask = data_sample
 
         logits, aux_loss = model(seqs_inputs, attention_masks)
@@ -86,15 +84,25 @@ def _train(cfg: RunConfig):
         flattened_logits = logits.view(-1, num_classes)
         flattened_targets = targets.view(-1)
         flat_mask_idx = (~mask).view(-1).nonzero().view(-1)
-        loss = F.cross_entropy(flattened_logits[flat_mask_idx], flattened_targets[flat_mask_idx], reduction='mean')
+        loss = F.cross_entropy(
+            flattened_logits[flat_mask_idx],
+            flattened_targets[flat_mask_idx],
+            reduction="mean",
+        )
         if i % train_cfg.log_every == 0:
-            to_log = {'loss': loss.item(), 'tokens_seen': tokens_seen, 'lr': scheduler.get_last_lr()[0]}
-            if 'WANDB_MODE' in os.environ:
+            to_log = {
+                "loss": loss.item(),
+                "tokens_seen": tokens_seen,
+                "lr": scheduler.get_last_lr()[0],
+            }
+            if "WANDB_MODE" in os.environ:
                 print(to_log)
             wandb.log(to_log, step=i)
         loss = loss + aux_loss
         loss.backward()
-        torch.nn.utils.clip_grad_norm_(model.parameters(), train_cfg.grad_clipping_value)
+        torch.nn.utils.clip_grad_norm_(
+            model.parameters(), train_cfg.grad_clipping_value
+        )
         optimizer.step()
         scheduler.step()
         tokens_seen += seqs_inputs.size(0) * seqs_inputs.size(1)
@@ -103,7 +111,11 @@ def _train(cfg: RunConfig):
             model.eval()
             with torch.no_grad():
                 eval_sample = random_sample_data2(
-                    train_cfg.batch_size, cfg.experiment.context_size, 5, cfg.experiment.num_classes, cfg.experiment.offset
+                    train_cfg.batch_size,
+                    cfg.experiment.context_size,
+                    5,
+                    cfg.experiment.num_classes,
+                    cfg.experiment.offset,
                 )
                 seqs_inputs, attention_masks, targets, mask = eval_sample
                 logits, _ = model(seqs_inputs, attention_masks)
@@ -111,11 +123,13 @@ def _train(cfg: RunConfig):
                 flattened_logits = logits.view(-1, num_classes)
                 flattened_targets = targets.view(-1)
                 flat_mask_idx = (~mask).view(-1).nonzero().view(-1)
-                loss = F.cross_entropy(flattened_logits[flat_mask_idx],
-                                       flattened_targets[flat_mask_idx],
-                                       reduction='mean')
-            to_log = {'val_loss': loss.item()}
-            if 'WANDB_MODE' in os.environ:
+                loss = F.cross_entropy(
+                    flattened_logits[flat_mask_idx],
+                    flattened_targets[flat_mask_idx],
+                    reduction="mean",
+                )
+            to_log = {"val_loss": loss.item()}
+            if "WANDB_MODE" in os.environ:
                 print(to_log)
             wandb.log(to_log, step=i)
 
@@ -124,10 +138,10 @@ def _train(cfg: RunConfig):
 
 
 cs = ConfigStore.instance()
-cs.store(name='run', node=RunConfig)
+cs.store(name="run", node=RunConfig)
 
 
-@hydra.main(version_base=None, config_path='config', config_name='synthetic_mask')
+@hydra.main(version_base=None, config_path="config", config_name="synthetic_mask")
 def main(cfg: OmegaConf):
     cfg = post_process_cfg(cfg)
     print(OmegaConf.to_yaml(cfg, resolve=True))
@@ -135,5 +149,5 @@ def main(cfg: OmegaConf):
     _train(cfg)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()
