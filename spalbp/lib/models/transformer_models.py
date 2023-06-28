@@ -202,6 +202,11 @@ class TransformerModel(nn.Module):
 
 
 class ClassificationTransformer(TransformerModel):
+
+    @classmethod
+    def from_config(cls, cfg: ModelConfig):
+        return cls(cfg)
+
     def __init__(self, cfg: ModelConfig):
         super().__init__(cfg)
         self.to_prob = nn.Linear(cfg.embedding_dim, cfg.num_classes)
@@ -216,6 +221,11 @@ class ClassificationTransformer(TransformerModel):
 
 
 class GeneratingTransformer(TransformerModel):
+
+    @classmethod
+    def from_config(cls, cfg: ModelConfig):
+        return cls(cfg)
+
     def __init__(self, cfg: ModelConfig):
         super().__init__(cfg)
         self.vocab_size = cfg.vocab_size

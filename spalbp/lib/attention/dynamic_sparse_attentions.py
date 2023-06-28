@@ -102,22 +102,23 @@ class _OneDimensionalSparseAttention(nn.Module):
         assert indices.size() == (batch, self.n_heads, context, num_points, 1), (
             f"Expected size {(batch, context, num_points, 1)}. " f"Got {indices.size()}"
         )
+
         densities = sparse.densities(
             indices_fl, means, sigmas
         ).clone()  # (B, H, C, P, self.k)
         duplicates = util.nduplicates(indices).to(
             torch.bool
         )  # (B, C, P) boolean mask of duplicates all-but-one
+        # breakpoint()
         densities[duplicates, :] = 0  # Removes all duplicates
-
         # Normalize densities across all K probability distributions by summing
         densities = densities / (
             densities.sum(dim=2, keepdim=True) + 1e-8
         )  # (B, H, C, P, self.k)
 
-        weights = values[:, :, :, None, :].expand_as(densities)
-        weights = weights * densities
-        weights = weights.sum(dim=4)
+        weights = values[:, :, :, None, :].expand_as(densities)  # (B, H, C, P, self.k)
+        weights = weights * densities  # (B, H, C, P, self.k)
+        weights = weights.sum(dim=4)  # (B, H, C, P)
 
         # Perform key, query, value transformation
         K = self.to_keys(x).view(batch, context, self.n_heads, self.head_size)
@@ -181,6 +182,7 @@ class NonadaptiveSparseAttention(_OneDimensionalSparseAttention):
     def _init_means(context: int, k: int, means_init_method: str):
         if means_init_method == "random":
             means = torch.rand((context, k, 1)) * 2 - 1
+            # means = means * 6
         elif means_init_method == "uniform":
             means = (
                 torch.linspace(0, context - 1, k + 2)[None, 1:-1, None]

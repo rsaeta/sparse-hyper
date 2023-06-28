@@ -5,12 +5,12 @@ from pathlib import Path
 from omegaconf import OmegaConf
 from lib.models import GeneratingTransformer
 from synthetic_mask import random_sample_data2
-from plot_utils import quickplot
-from utils import find_latest_model
+from plot_utils import quickplot, make_gif
+from utils import find_latest_model, get_model
 
 
 def load_config(dip: Path):
-    conf_file = dip / 'config.yaml'
+    conf_file = dip / "config.yaml"
     cfg = OmegaConf.load(conf_file)
     return cfg
 
@@ -20,10 +20,9 @@ def load_model(cfg, dip: Path, model_name: str = None):
         model_file = find_latest_model(dip)
     else:
         model_file = dip / model_name
-    sd = torch.load(model_file, map_location=torch.device('cuda'))
-    model = GeneratingTransformer(cfg.model)
+    sd = torch.load(model_file, map_location=torch.device("cuda"))
+    model = get_model(cfg)
     model.load_state_dict(sd)
-    model.to('cuda')
     return model
 
 
@@ -33,18 +32,44 @@ def load_dir(dip: Path, model_name: str = None):
     return cfg, model
 
 
+def get_native_attentions(model, seqs_inputs, attention_masks):
+    attended = model.embed(seqs_inputs)
+    for layer in model.transformer.layers[:-1]:
+        attended = layer(attended, attention_masks)
+    layer = model.transformer.layers[-1]
+    attended = layer.norm1(attended)
+    _, attentions = layer.self_attn(
+        attended,
+        attended,
+        attended,
+        (~(attention_masks[:, 0]).bool()),
+        need_weights=True,
+        average_attn_weights=False,
+    )
+    return attentions
+
+
 def get_attentions(model, seqs_inputs, attention_masks):
+    if not isinstance(model, GeneratingTransformer):
+        return get_native_attentions(model, seqs_inputs, attention_masks)
     attended = model.embed(seqs_inputs)
     for t_block in model.t_blocks[:-1]:
         attended = t_block.attend(attended, attention_masks)
-    _, attentions = model.t_blocks[-1].attend(attended, attention_masks, output_attentions=True)
+    _, attentions = model.t_blocks[-1].attend(
+        attended, attention_masks, output_attentions=True
+    )
     return attentions
 
 
 def run_thing(cfg: OmegaConf, model):
-    sample = random_sample_data2(10, cfg.experiment.context_size, 5, cfg.experiment.num_classes, cfg.experiment.offset)
-    seqs_inputs, attention_masks, targets, mask = map(lambda x: x.to('cuda'), sample)
-    model.t_blocks[0].attend.nadditional = 4
+    sample = random_sample_data2(
+        10,
+        cfg.experiment.context_size,
+        5,
+        cfg.experiment.num_classes,
+        cfg.experiment.offset,
+    )
+    seqs_inputs, attention_masks, targets, mask = map(lambda x: x.to("cuda"), sample)
     model.eval()
     eval_logits, _ = model(seqs_inputs, attention_masks)
     eval_attentions = get_attentions(model, seqs_inputs, attention_masks)
@@ -67,40 +92,51 @@ def run_thing(cfg: OmegaConf, model):
     train_logits = train_logits[mask_idx]
     targets = targets[mask_idx]
 
-    train_loss = torch.nn.functional.cross_entropy(train_logits, targets, reduction='none')
-    eval_loss = torch.nn.functional.cross_entropy(eval_logits, targets, reduction='none')
+    train_loss = torch.nn.functional.cross_entropy(
+        train_logits, targets, reduction="none"
+    )
+    eval_loss = torch.nn.functional.cross_entropy(
+        eval_logits, targets, reduction="none"
+    )
 
     eval_accuracy = (eval_logits.argmax(-1) == targets).float().mean().item()
     train_accuracy = (train_logits.argmax(-1) == targets).float().mean().item()
 
     model.train()
 
-
-    #attended2 = model.t_blocks[1].attend(attended1, attention_masks)
-    #attended3, attentions = model.t_blocks[2].attend(attended2, attention_masks, output_attentions=True)
-    #breakpoint()
+    # attended2 = model.t_blocks[1].attend(attended1, attention_masks)
+    # attended3, attentions = model.t_blocks[2].attend(attended2, attention_masks, output_attentions=True)
     return train_attentions, eval_attentions
 
 
 def main():
-    cfg, model = load_dir(Path('models/fixing_mask_simple_sparse'))
+    cfg, model = load_dir(Path("models/fixing_mask_simple_sparse"))
     run_thing(cfg, model)
 
 
 def plot_attentions_over_time(dip: Path):
     cfg = load_config(dip)
     i = 1
-    model_name = f'checkpoint_{i}_model.pt'
+    model_name = f"checkpoint_{i}_model.pt"
     while os.path.exists(dip / model_name):
         model = load_model(cfg, dip, model_name)
         train_attentions, eval_attentions = run_thing(cfg, model)
-        quickplot(train_attentions[0, 0], dip / f'train_attentions_{i}')
-        quickplot(eval_attentions[0, 0], dip / f'eval_attentions_{i}')
-        i += 10
-        model_name = f'checkpoint_{i}_model.pt'
+        quickplot(
+            train_attentions.mean(dim=1)[0],
+            filename=dip / f"train_attentions_{i}",
+            title=f"Training attention at step {i}",
+        )
+        quickplot(
+            eval_attentions.mean(dim=1)[0],
+            filename=dip / f"eval_attentions_{i}",
+            title=f"Validation attention at step {i}",
+        )
+        i += 1
+        model_name = f"checkpoint_{i}_model.pt"
+    make_gif(dip)
 
 
-if __name__ == '__main__':
-    # cfg, model = load_dir(Path('models/synth_hydra_convolv_then_sparse_super_small_vocab_1'))
-    #run_thing(cfg, model)
-    plot_attentions_over_time(Path('models/fixing_mask_simple_sparse_third_even_init'))
+if __name__ == "__main__":
+    # cfg, model = load_dir(Path('models/synth_hydra_convolv_then_clustered_super_small_vocab_0'))
+    # run_thing(cfg, model)
+    plot_attentions_over_time(Path("models/vocab_512_native_smaller_lr"))

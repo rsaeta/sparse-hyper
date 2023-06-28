@@ -2,6 +2,7 @@ from dataclasses import dataclass
 from torch import nn, Tensor
 
 from positional_encodings.torch_encodings import PositionalEncoding1D, Summer
+from .transformer_models import LearnedPosEmbedding
 
 
 @dataclass
@@ -18,7 +19,15 @@ class NativeTransformerConfig:
 class NativeTransformer(nn.Module):
     @classmethod
     def from_config(cls, config: NativeTransformerConfig):
-        return cls(**config.__dict__)
+        return cls(
+            emb=config.emb,
+            heads=config.heads,
+            ff_hidden_mult=config.ff_hidden_mult,
+            dropout=config.dropout,
+            depth=config.depth,
+            context=config.context,
+            vocab=config.vocab,
+        )
 
     def __init__(
         self,
@@ -34,6 +43,7 @@ class NativeTransformer(nn.Module):
 
         self.token_embedding = nn.Embedding(num_embeddings=vocab, embedding_dim=emb)
         self.pos_embedding = Summer(PositionalEncoding1D(emb))
+        # self.pos_embedding = LearnedPosEmbedding(context, emb)
         self.nheads = heads
         self.context = context
         encoder_layer = nn.TransformerEncoderLayer(
@@ -60,5 +70,6 @@ class NativeTransformer(nn.Module):
             .expand(-1, self.nheads, -1, -1)
             .reshape(-1, self.context, self.context)
         )
+        mask = mask[0]
         out = self.transformer(emb, (~(mask.bool())))
-        return self.to_vocab(out)
+        return self.to_vocab(out), 0

@@ -32,7 +32,12 @@ def random_sample_data2(batch_size, seq_len, low, high, offset=70):
     targets = seqs_inputs.detach().clone()
     # Modify the input so that the masked token positions are filled with [MASK] tokens
     # and the token at position mask + offset is the target token.
+    to_mask_indices = (~mask).nonzero()
+    # Make sure that there are no masked tokens in another masked position
     for b, m_i in (~mask).nonzero():
+        if not mask[b, (m_i - offset) % seq_len]:
+            mask[b, (m_i - offset) % seq_len] = True
+            continue
         seqs_inputs[b] = apply_offset_mask(seqs_inputs[b], m_i, mask_token, offset)
     # Expand the attention mask to a symmetric matrix
     attention_masks = attention_masks[:, None, :].expand(-1, seq_len, -1)

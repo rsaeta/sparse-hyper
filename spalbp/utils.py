@@ -10,7 +10,7 @@ import torch
 from torch.utils.data import DataLoader, Dataset
 import wandb
 
-from lib.models import GeneratingTransformer, ClassificationTransformer
+from lib.models import GeneratingTransformer, ClassificationTransformer, NativeTransformer
 
 try:
     import torch._dynamo
@@ -115,10 +115,13 @@ def load_dir(path: str):
 
 
 def get_model(cfg: RunConfig):
-    model_cls = ClassificationTransformer \
-        if cfg.experiment.data.output_type == 'classification' \
-        else GeneratingTransformer
-    model = model_cls(cfg.model)
+    if hasattr(cfg.model, 'type') and cfg.model.type == 'native':
+        model_cls = NativeTransformer
+    elif cfg.experiment.data.output_type == 'classification':
+        model_cls = ClassificationTransformer
+    else:
+        model_cls = GeneratingTransformer
+    model = model_cls.from_config(cfg.model)
     if cfg.experiment.load_dir is not None:
         model_file = find_latest_model(cfg.experiment.load_dir)
         if model_file is None:

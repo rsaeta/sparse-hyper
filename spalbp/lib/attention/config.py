@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from spalbp.config_base import _ConfigBase
+from config_base import _ConfigBase
 
 
 @dataclass

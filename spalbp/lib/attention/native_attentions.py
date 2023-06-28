@@ -95,7 +95,7 @@ class NativeAttention(nn.Module):
             0, 1
         )  # (c, b, e) for multihead-attention that is not batch-first
         out, weights = self.native_attention(
-            x, x, x, attn_mask=expanded, need_weights=True
+            x, x, x, attn_mask=expanded, need_weights=True, average_attn_weights=False
         )
         if output_attentions:
             return out.transpose(0, 1), weights
