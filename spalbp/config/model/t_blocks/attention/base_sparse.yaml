@@ -8,3 +8,4 @@ sigma_scale: 1.0
 transformation_method: sigmoid
 head_size: 16
 remove_rand_on_eval: false
+bias_kv: false
