@@ -60,6 +60,6 @@ class ClusteredAttention(nn.Module):
             q, k, v
         )  # kind of annoying have to deal with aux-loss here
         out = self.unify(
-            out.transpose(1, 2).reshape(b, c, self.num_heads * self.head_size)
+            out.transpose(1, 2).contiguous().view(b, c, self.num_heads * self.head_size)
         )
         return out, loss
