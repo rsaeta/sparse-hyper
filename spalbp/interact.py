@@ -79,31 +79,29 @@ def run_thing(cfg: OmegaConf, model):
     train_attentions = get_attentions(model, seqs_inputs, attention_masks)
 
     num_classes = eval_logits.size(-1)
-    eval_logits = eval_logits.view(-1, num_classes)
-    train_logits = train_logits.view(-1, num_classes)
-    targets = targets.view(-1)
+    flat_eval_logits = eval_logits.view(-1, num_classes)
+    flat_train_logits = train_logits.view(-1, num_classes)
+    flat_targets = targets.view(-1)
 
     #  flat_mask = mask.view(-1)
 
     flat_mask = (seqs_inputs != 4).view(-1)
     mask_idx = (~flat_mask).nonzero().squeeze(-1)
 
-    eval_logits = eval_logits[mask_idx]
-    train_logits = train_logits[mask_idx]
-    targets = targets[mask_idx]
+    filtered_flat_eval_logits = flat_eval_logits[mask_idx]
+    filtered_flat_train_logits = flat_train_logits[mask_idx]
+    filtered_flat_targets = flat_targets[mask_idx]
 
     train_loss = torch.nn.functional.cross_entropy(
-        train_logits, targets, reduction="none"
+        filtered_flat_train_logits, filtered_flat_targets, reduction="none"
     )
     eval_loss = torch.nn.functional.cross_entropy(
-        eval_logits, targets, reduction="none"
+        filtered_flat_eval_logits, filtered_flat_targets, reduction="none"
     )
 
-    eval_accuracy = (eval_logits.argmax(-1) == targets).float().mean().item()
-    train_accuracy = (train_logits.argmax(-1) == targets).float().mean().item()
-
+    eval_accuracy = (filtered_flat_eval_logits.argmax(-1) == filtered_flat_targets).float().mean().item()
+    train_accuracy = (filtered_flat_train_logits.argmax(-1) == filtered_flat_targets).float().mean().item()
     model.train()
-
     # attended2 = model.t_blocks[1].attend(attended1, attention_masks)
     # attended3, attentions = model.t_blocks[2].attend(attended2, attention_masks, output_attentions=True)
     return train_attentions, eval_attentions
@@ -116,7 +114,7 @@ def main():
 
 def plot_attentions_over_time(dip: Path):
     cfg = load_config(dip)
-    i = 1
+    i = 0
     model_name = f"checkpoint_{i}_model.pt"
     while os.path.exists(dip / model_name):
         model = load_model(cfg, dip, model_name)
@@ -137,6 +135,6 @@ def plot_attentions_over_time(dip: Path):
 
 
 if __name__ == "__main__":
-    # cfg, model = load_dir(Path('models/synth_hydra_convolv_then_clustered_super_small_vocab_0'))
-    # run_thing(cfg, model)
-    plot_attentions_over_time(Path("models/vocab_512_native_smaller_lr"))
+    #cfg, model = load_dir(Path('models/synth_hydra_simple_sparse_2_k_vocab_256_sinusoidal_pos'))
+    #run_thing(cfg, model)
+    plot_attentions_over_time(Path("models/synth_hydra_simple_sparse_2_k_vocab_256_sinusoidal_pos"))

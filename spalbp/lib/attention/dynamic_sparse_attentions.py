@@ -22,6 +22,7 @@ class _OneDimensionalSparseAttention(nn.Module):
         gadditional: int = 1,
         nadditional: int = 4,
         remove_rand_on_eval: bool = True,
+        bias_kv: bool = False,
     ):
         super().__init__()
         self.emb = emb
@@ -31,9 +32,9 @@ class _OneDimensionalSparseAttention(nn.Module):
         self.nadditional = nadditional
         self.head_size = head_size
 
-        self.to_keys = nn.Linear(emb, head_size * n_heads, bias=False)
-        self.to_queries = nn.Linear(emb, head_size * n_heads, bias=False)
-        self.to_values = nn.Linear(emb, head_size * n_heads, bias=False)
+        self.to_keys = nn.Linear(emb, head_size * n_heads, bias=bias_kv)
+        self.to_queries = nn.Linear(emb, head_size * n_heads, bias=bias_kv)
+        self.to_values = nn.Linear(emb, head_size * n_heads, bias=bias_kv)
         self.unify = nn.Linear(head_size * n_heads, emb)
         self.remove_rand_on_eval = remove_rand_on_eval
 
@@ -63,13 +64,13 @@ class _OneDimensionalSparseAttention(nn.Module):
         )  # (B, H, C, k, 1); (B, H, C, k, 1); (B, H, C, k)
         batch, context, emb = x.size()  # (B, C, E)
         rank = means.size(-1)
+        gadditional = self.gadditional if self.training or not self.remove_rand_on_eval else 0
+        nadditional = self.nadditional if self.training or not self.remove_rand_on_eval else 0
         indices: Tensor = sparse.ngenerate(
             means,
             # For evaluation, only get nearest
-            self.gadditional if self.training or not self.remove_rand_on_eval else 0,
-            self.nadditional
-            if self.training or not self.remove_rand_on_eval
-            else 0,  # index for each point
+            gadditional,
+            nadditional,
             rng=(context,),
             relative_range=(3,),
             cuda="cuda" in util.d(x),
@@ -121,6 +122,7 @@ class _OneDimensionalSparseAttention(nn.Module):
         weights = weights.sum(dim=4)  # (B, H, C, P)
 
         # Perform key, query, value transformation
+
         K = self.to_keys(x).view(batch, context, self.n_heads, self.head_size)
         Q = self.to_queries(x).view(batch, context, self.n_heads, self.head_size)
         V = self.to_values(x).view(batch, context, self.n_heads, self.head_size)
@@ -176,6 +178,7 @@ class NonadaptiveSparseAttention(_OneDimensionalSparseAttention):
             transformation_method=config.transformation_method,
             means_init_method=config.means_init_method,
             remove_rand_on_eval=config.remove_rand_on_eval,
+            bias_kv=config.bias_kv,
         )
 
     @staticmethod
@@ -208,6 +211,7 @@ class NonadaptiveSparseAttention(_OneDimensionalSparseAttention):
         transformation_method: str = "sigmoid",
         means_init_method: str = "random",
         remove_rand_on_eval: bool = False,
+        bias_kv: bool = False,
     ):
         super().__init__(
             emb,
@@ -216,6 +220,7 @@ class NonadaptiveSparseAttention(_OneDimensionalSparseAttention):
             gadditional=gadditional,
             nadditional=nadditional,
             remove_rand_on_eval=remove_rand_on_eval,
+            bias_kv=bias_kv,
         )
         means = self._init_means(context_len, k, means_init_method)
         self.pmeans = torch.nn.Parameter(means)
@@ -343,6 +348,7 @@ class SparseSelfAttention(_OneDimensionalSparseAttention):
             gadditional=config.gadditional,
             nadditional=config.nadditional,
             remove_rand_on_eval=config.remove_rand_on_eval,
+            bias_kv=config.bias_kv,
         )
 
     def __init__(
@@ -357,6 +363,7 @@ class SparseSelfAttention(_OneDimensionalSparseAttention):
         gadditional: int = 2,
         nadditional: int = 2,
         remove_rand_on_eval: bool = True,
+        bias_kv: bool = False,
     ):
         super().__init__(
             emb,
@@ -366,12 +373,16 @@ class SparseSelfAttention(_OneDimensionalSparseAttention):
             gadditional=gadditional,
             nadditional=nadditional,
             remove_rand_on_eval=remove_rand_on_eval,
+            bias_kv=bias_kv,
         )
         self.context_len = context_len
         self.to_param = nn.Sequential(
             nn.Linear(emb, hidden),
             nn.ReLU(),
+#            nn.Linear(hidden, hidden),
+#            nn.ReLU(),
             nn.Linear(hidden, 2 * k * n_heads),  # One mean and one sigma per head
+#            nn.Sigmoid(),
         )
 
     def hyper(self, x: Tensor) -> Tuple[Tensor, Tensor, Tensor]:
@@ -386,11 +397,11 @@ class SparseSelfAttention(_OneDimensionalSparseAttention):
         )  # (B, C, h*k*2) k means and sigmas for each point (1 degree of freedom)
 
         # Generate the logits that correspond to the horizontal coordinate of the current word
-        diags = torch.arange(context_len, device=util.d(x), dtype=torch.float)
-        diags = util.inv(diags, mx=context_len)
-        diags = diags[None, :, None, None].expand(
-            batch_size, -1, self.k, 1
-        )  # (B, C, K, 1)
+        # diags = torch.arange(context_len, device=util.d(x), dtype=torch.float)
+        # diags = util.inv(diags, mx=context_len)
+        # diags = diags[None, None, :, None, None].expand(
+        #    batch_size, self.n_heads, -1, self.k, 1
+        # )  # (B, H, C, K, 1)
         means = (
             params[:, :, : self.n_heads * self.k, None]
             .view(batch_size, context_len, self.n_heads, self.k, 1)

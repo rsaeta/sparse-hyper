@@ -41,6 +41,7 @@ class _OneDSparseAttention(_AttentionConfig):
     transformation_method: str
     head_size: int
     remove_rand_on_eval: bool
+    bias_kv: bool
 
 
 @dataclass

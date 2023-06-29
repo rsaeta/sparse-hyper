@@ -40,6 +40,5 @@ def sort_png(a):
 def make_gif(dip: Path):
     training_imgs = sorted(glob.glob(str(dip / "train_attentions_*.png")), key=sort_png)
     eval_imgs = sorted(glob.glob(str(dip / "eval_attentions_*.png")), key=sort_png)
-    breakpoint()
     generate_gif(training_imgs, str(dip / "train"))
     generate_gif(eval_imgs, str(dip / "eval"))

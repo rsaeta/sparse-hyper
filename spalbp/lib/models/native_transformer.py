@@ -14,6 +14,7 @@ class NativeTransformerConfig:
     depth: int
     context: int
     vocab: int
+    pos_embedding: str
 
 
 class NativeTransformer(nn.Module):
@@ -27,6 +28,7 @@ class NativeTransformer(nn.Module):
             depth=config.depth,
             context=config.context,
             vocab=config.vocab,
+            pos_embedding=config.pos_embedding,
         )
 
     def __init__(
@@ -38,12 +40,17 @@ class NativeTransformer(nn.Module):
         depth: int = 0,
         context: int = 0,
         vocab: int = 32000,
+        pos_embedding: str = "learned",
     ):
         super().__init__()
 
         self.token_embedding = nn.Embedding(num_embeddings=vocab, embedding_dim=emb)
-        self.pos_embedding = Summer(PositionalEncoding1D(emb))
-        # self.pos_embedding = LearnedPosEmbedding(context, emb)
+        if pos_embedding == "learned":
+            self.pos_embedding = LearnedPosEmbedding(context, emb)
+        elif pos_embedding == "sinusoidal":
+            self.pos_embedding = Summer(PositionalEncoding1D(emb))
+        else:
+            raise ValueError(f"Unknown positional encoding type: {pos_embedding}")
         self.nheads = heads
         self.context = context
         encoder_layer = nn.TransformerEncoderLayer(

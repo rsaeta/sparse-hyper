@@ -232,6 +232,5 @@ class GeneratingTransformer(TransformerModel):
         self.to_probs = nn.Linear(cfg.embedding_dim, cfg.vocab_size)
 
     def post_tblocks(self, x: Tensor) -> Tensor:
-        b, c, e = x.size()  # batch, context, embed
-        x = self.to_probs(x.view(b * c, e)).view(b, c, self.vocab_size)
+        x = self.to_probs(x)  # (batch, context, vocab_size)
         return x
