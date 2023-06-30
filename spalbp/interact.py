@@ -53,12 +53,24 @@ def get_attentions(model, seqs_inputs, attention_masks):
     if not isinstance(model, GeneratingTransformer):
         return get_native_attentions(model, seqs_inputs, attention_masks)
     attended = model.embed(seqs_inputs)
-    for t_block in model.t_blocks[:-1]:
-        attended = t_block.attend(attended, attention_masks)
-    _, attentions = model.t_blocks[-1].attend(
-        attended, attention_masks, output_attentions=True
+
+    num_layers = len(model.t_blocks)
+    b, c = seqs_inputs.shape
+    num_heads = (
+        model.t_blocks[0].attend.num_heads
+        if hasattr(model.t_blocks[0].attend, "num_heads")
+        else model.t_blocks[0].attend.n_heads
     )
-    return attentions
+
+    layers_attentions = torch.empty(num_layers, b, num_heads, c, c)
+
+    for i, t_block in enumerate(model.t_blocks):
+        attended, attentions = t_block.attend(
+            attended, attention_masks, output_attentions=True
+        )
+        layers_attentions[i] = attentions
+
+    return layers_attentions
 
 
 def run_thing(cfg: OmegaConf, model):
@@ -99,8 +111,19 @@ def run_thing(cfg: OmegaConf, model):
         filtered_flat_eval_logits, filtered_flat_targets, reduction="none"
     )
 
-    eval_accuracy = (filtered_flat_eval_logits.argmax(-1) == filtered_flat_targets).float().mean().item()
-    train_accuracy = (filtered_flat_train_logits.argmax(-1) == filtered_flat_targets).float().mean().item()
+    eval_accuracy = (
+        (filtered_flat_eval_logits.argmax(-1) == filtered_flat_targets)
+        .float()
+        .mean()
+        .item()
+    )
+    train_accuracy = (
+        (filtered_flat_train_logits.argmax(-1) == filtered_flat_targets)
+        .float()
+        .mean()
+        .item()
+    )
+    breakpoint()
     model.train()
     # attended2 = model.t_blocks[1].attend(attended1, attention_masks)
     # attended3, attentions = model.t_blocks[2].attend(attended2, attention_masks, output_attentions=True)
@@ -120,12 +143,12 @@ def plot_attentions_over_time(dip: Path):
         model = load_model(cfg, dip, model_name)
         train_attentions, eval_attentions = run_thing(cfg, model)
         quickplot(
-            train_attentions.mean(dim=1)[0],
+            train_attentions[-1].mean(dim=1)[0],
             filename=dip / f"train_attentions_{i}",
             title=f"Training attention at step {i}",
         )
         quickplot(
-            eval_attentions.mean(dim=1)[0],
+            eval_attentions[-1].mean(dim=1)[0],
             filename=dip / f"eval_attentions_{i}",
             title=f"Validation attention at step {i}",
         )
@@ -135,6 +158,8 @@ def plot_attentions_over_time(dip: Path):
 
 
 if __name__ == "__main__":
-    #cfg, model = load_dir(Path('models/synth_hydra_simple_sparse_2_k_vocab_256_sinusoidal_pos'))
-    #run_thing(cfg, model)
-    plot_attentions_over_time(Path("models/synth_hydra_simple_sparse_2_k_vocab_256_sinusoidal_pos"))
+    cfg, model = load_dir(Path('models/synth_hydra_knowing_vocab_256_learned_pos_0_ngadditional_1_k'))
+    run_thing(cfg, model)
+    plot_attentions_over_time(
+        Path("models/synth_hydra_knowing_vocab_256_learned_pos_0_ngadditional_1_k")
+    )

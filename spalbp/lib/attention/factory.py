@@ -13,6 +13,7 @@ from .native_attentions import (
     NativeAttention,
     EasySlidingWindowAttention2,
     SlidingWindowWithGlobalAttention,
+    SlidingWindowAttentionWithRemainder
 )
 from .clustered_attention import ClusteredAttention
 
@@ -35,6 +36,7 @@ type_to_classes = {
         config.SlidingWindowConfig,
         SlidingWindowWithGlobalAttention,
     ),
+    "sliding-window-with-remainder": (config.SlidingWindowConfig, SlidingWindowAttentionWithRemainder),
     "clustered": (config.ClusteredAttentionConfig, ClusteredAttention),
 }
 

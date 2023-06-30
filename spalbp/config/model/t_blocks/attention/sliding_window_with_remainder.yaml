@@ -1,0 +1,3 @@
+defaults:
+  - sliding_window
+attention_type: sliding-window-with-remainder
