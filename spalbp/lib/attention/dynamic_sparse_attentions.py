@@ -110,7 +110,6 @@ class _OneDimensionalSparseAttention(nn.Module):
         duplicates = util.nduplicates(indices).to(
             torch.bool
         )  # (B, C, P) boolean mask of duplicates all-but-one
-        # breakpoint()
         densities[duplicates, :] = 0  # Removes all duplicates
         # Normalize densities across all K probability distributions by summing
         densities = densities / (
@@ -185,7 +184,6 @@ class NonadaptiveSparseAttention(_OneDimensionalSparseAttention):
     def _init_means(context: int, k: int, means_init_method: str):
         if means_init_method == "random":
             means = torch.rand((context, k, 1)) * 2 - 1
-            # means = means * 6
         elif means_init_method == "uniform":
             means = (
                 torch.linspace(0, context - 1, k + 2)[None, 1:-1, None]
