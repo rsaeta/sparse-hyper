@@ -171,6 +171,18 @@ class EasySlidingWindowAttention(NativeAttention):
         return super().forward(x, attention_mask)
 
 
+class SlidingWindowAttentionWithRemainder(EasySlidingWindowAttention):
+
+    @staticmethod
+    def _get_sliding_window_mask(c: int, window_size: int):
+        sliding_window_attn = torch.zeros((c, c))
+        r = torch.arange(c)
+        for step in range(1, 1 + window_size):
+            sliding_window_attn[r, (r + step) % c] = 1
+            sliding_window_attn[r, (r - step) % c] = 1
+        return sliding_window_attn
+
+
 class SlidingWindowWithGlobalAttention(EasySlidingWindowAttention):
     def forward(self, x: Tensor, attention_mask: Tensor):
         c = x.shape[-2]
