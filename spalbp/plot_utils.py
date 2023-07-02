@@ -12,7 +12,7 @@ def quickplot(attentions: torch.Tensor, filename=None, title=None):
         plt.title(title)
     plt.colorbar()
     if filename is not None:
-        plt.savefig(filename)
+        plt.savefig(filename, dpi=1200)
         plt.close()
     else:
         plt.show()

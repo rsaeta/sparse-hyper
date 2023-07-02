@@ -9,3 +9,4 @@ transformation_method: sigmoid
 head_size: 16
 remove_rand_on_eval: false
 bias_kv: false
+densities_buffer: 1e-8

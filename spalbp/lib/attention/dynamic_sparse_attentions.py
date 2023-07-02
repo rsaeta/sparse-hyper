@@ -23,6 +23,7 @@ class _OneDimensionalSparseAttention(nn.Module):
         nadditional: int = 4,
         remove_rand_on_eval: bool = True,
         bias_kv: bool = False,
+        densities_buffer: float = 1e-8,
     ):
         super().__init__()
         self.emb = emb
@@ -31,6 +32,7 @@ class _OneDimensionalSparseAttention(nn.Module):
         self.gadditional = gadditional
         self.nadditional = nadditional
         self.head_size = head_size
+        self.densities_buffer = densities_buffer
 
         self.to_keys = nn.Linear(emb, head_size * n_heads, bias=bias_kv)
         self.to_queries = nn.Linear(emb, head_size * n_heads, bias=bias_kv)
@@ -64,8 +66,12 @@ class _OneDimensionalSparseAttention(nn.Module):
         )  # (B, H, C, k, 1); (B, H, C, k, 1); (B, H, C, k)
         batch, context, emb = x.size()  # (B, C, E)
         rank = means.size(-1)
-        gadditional = self.gadditional if self.training or not self.remove_rand_on_eval else 0
-        nadditional = self.nadditional if self.training or not self.remove_rand_on_eval else 0
+        gadditional = (
+            self.gadditional if self.training or not self.remove_rand_on_eval else 0
+        )
+        nadditional = (
+            self.nadditional if self.training or not self.remove_rand_on_eval else 0
+        )
         indices: Tensor = sparse.ngenerate(
             means,
             # For evaluation, only get nearest
@@ -113,7 +119,7 @@ class _OneDimensionalSparseAttention(nn.Module):
         densities[duplicates, :] = 0  # Removes all duplicates
         # Normalize densities across all K probability distributions by summing
         densities = densities / (
-            densities.sum(dim=2, keepdim=True) + 1e-8
+            densities.sum(dim=2, keepdim=True) + self.densities_buffer
         )  # (B, H, C, P, self.k)
 
         weights = values[:, :, :, None, :].expand_as(densities)  # (B, H, C, P, self.k)
@@ -129,18 +135,15 @@ class _OneDimensionalSparseAttention(nn.Module):
         K = K / (self.head_size ** (1 / 2))
         Q = Q / (self.head_size ** (1 / 2))
 
+        Q = Q.transpose(1, 2)  # [b, h, c, d]
+        V = V.transpose(1, 2)  # [b, h, c, d]
+
         flat_indices = indices.view(batch, self.n_heads, -1)  # [b, h, c * p]
-        gathered_keys = self.batched_index_select(
-            K.transpose(1, 2), flat_indices
+        gathered_keys = self.batched_index_select(K.transpose(1, 2), flat_indices).view(
+            batch, self.n_heads, context, num_points, -1
         )  # [b, h, c * p, d]
-        dots = torch.einsum(
-            "bhcd,bhcqd -> bhcq",
-            Q.transpose(1, 2),
-            gathered_keys.view(batch, self.n_heads, context, num_points, -1),
-        )  # [b, h, c, p]
-        gathered_values = self.batched_index_select(
-            V.transpose(1, 2), flat_indices
-        )  # [b, h, c * p, d]
+        dots = torch.einsum("bhcd,bhcqd -> bhcq", Q, gathered_keys)  # [b, h, c, p]
+        gathered_values = self.batched_index_select(V, flat_indices)  # [b, h, c * p, d]
         gathered_values = gathered_values.view(
             batch, self.n_heads, context, num_points, -1
         )  # [b, h, c, p, d]
@@ -178,6 +181,7 @@ class NonadaptiveSparseAttention(_OneDimensionalSparseAttention):
             means_init_method=config.means_init_method,
             remove_rand_on_eval=config.remove_rand_on_eval,
             bias_kv=config.bias_kv,
+            densities_buffer=config.densities_buffer,
         )
 
     @staticmethod
@@ -210,6 +214,7 @@ class NonadaptiveSparseAttention(_OneDimensionalSparseAttention):
         means_init_method: str = "random",
         remove_rand_on_eval: bool = False,
         bias_kv: bool = False,
+        densities_buffer: float = 1e-8,
     ):
         super().__init__(
             emb,
@@ -219,6 +224,7 @@ class NonadaptiveSparseAttention(_OneDimensionalSparseAttention):
             nadditional=nadditional,
             remove_rand_on_eval=remove_rand_on_eval,
             bias_kv=bias_kv,
+            densities_buffer=densities_buffer,
         )
         means = self._init_means(context_len, k, means_init_method)
         self.pmeans = torch.nn.Parameter(means)
@@ -377,10 +383,10 @@ class SparseSelfAttention(_OneDimensionalSparseAttention):
         self.to_param = nn.Sequential(
             nn.Linear(emb, hidden),
             nn.ReLU(),
-#            nn.Linear(hidden, hidden),
-#            nn.ReLU(),
+            #            nn.Linear(hidden, hidden),
+            #            nn.ReLU(),
             nn.Linear(hidden, 2 * k * n_heads),  # One mean and one sigma per head
-#            nn.Sigmoid(),
+            #            nn.Sigmoid(),
         )
 
     def hyper(self, x: Tensor) -> Tuple[Tensor, Tensor, Tensor]:

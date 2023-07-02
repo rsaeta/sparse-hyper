@@ -33,19 +33,22 @@ def load_dir(dip: Path, model_name: str = None):
 
 
 def get_native_attentions(model, seqs_inputs, attention_masks):
+    b, c = seqs_inputs.shape
+    num_layers = len(model.transformer.layers)
+    num_heads = model.transformer.layers[0].self_attn.num_heads
+    attentions = torch.empty(num_layers, b, num_heads, c, c)
     attended = model.embed(seqs_inputs)
-    for layer in model.transformer.layers[:-1]:
-        attended = layer(attended, attention_masks)
-    layer = model.transformer.layers[-1]
-    attended = layer.norm1(attended)
-    _, attentions = layer.self_attn(
-        attended,
-        attended,
-        attended,
-        (~(attention_masks[:, 0]).bool()),
-        need_weights=True,
-        average_attn_weights=False,
-    )
+    for i, layer in enumerate(model.transformer.layers):
+        attended, attention = layer.self_attn(
+            attended,
+            attended,
+            attended,
+            (~(attention_masks[:, 0]).bool()),
+            need_weights=True,
+            average_attn_weights=False,
+        )
+        attended = layer.norm1(attended)
+        attentions[i] = attention
     return attentions
 
 
@@ -73,7 +76,7 @@ def get_attentions(model, seqs_inputs, attention_masks):
     return layers_attentions
 
 
-def run_thing(cfg: OmegaConf, model):
+def run_thing_dict(cfg: OmegaConf, model):
     sample = random_sample_data2(
         10,
         cfg.experiment.context_size,
@@ -94,8 +97,6 @@ def run_thing(cfg: OmegaConf, model):
     flat_eval_logits = eval_logits.view(-1, num_classes)
     flat_train_logits = train_logits.view(-1, num_classes)
     flat_targets = targets.view(-1)
-
-    #  flat_mask = mask.view(-1)
 
     flat_mask = (seqs_inputs != 4).view(-1)
     mask_idx = (~flat_mask).nonzero().squeeze(-1)
@@ -123,15 +124,82 @@ def run_thing(cfg: OmegaConf, model):
         .mean()
         .item()
     )
-    breakpoint()
+
     model.train()
-    # attended2 = model.t_blocks[1].attend(attended1, attention_masks)
-    # attended3, attentions = model.t_blocks[2].attend(attended2, attention_masks, output_attentions=True)
+
+    return {
+        "seqs_inputs": seqs_inputs,
+        "attention_masks": attention_masks,
+        "targets": targets,
+        "mask": mask,
+        "eval_logits": eval_logits,
+        "eval_attentions": eval_attentions,
+        "train_logits": train_logits,
+        "train_attentions": train_attentions,
+        "filtered_flat_targets": filtered_flat_targets,
+        "filtered_flat_eval_logits": filtered_flat_eval_logits,
+        "filtered_flat_train_logits": filtered_flat_train_logits,
+        "train_loss": train_loss,
+        "eval_loss": eval_loss,
+        "eval_accuracy": eval_accuracy,
+        "train_accuracy": train_accuracy,
+    }
+
+def run_thing(cfg: OmegaConf, model):
+    sample = random_sample_data2(
+        10,
+        cfg.experiment.context_size,
+        5,
+        cfg.experiment.num_classes,
+        cfg.experiment.offset,
+    )
+    seqs_inputs, attention_masks, targets, mask = map(lambda x: x.to("cuda"), sample)
+    model.eval()
+    eval_logits, _ = model(seqs_inputs, attention_masks)
+    eval_attentions = get_attentions(model, seqs_inputs, attention_masks)
+
+    model.train()
+    train_logits, _ = model(seqs_inputs, attention_masks)
+    train_attentions = get_attentions(model, seqs_inputs, attention_masks)
+
+    num_classes = eval_logits.size(-1)
+    flat_eval_logits = eval_logits.view(-1, num_classes)
+    flat_train_logits = train_logits.view(-1, num_classes)
+    flat_targets = targets.view(-1)
+
+    flat_mask = (seqs_inputs != 4).view(-1)
+    mask_idx = (~flat_mask).nonzero().squeeze(-1)
+
+    filtered_flat_eval_logits = flat_eval_logits[mask_idx]
+    filtered_flat_train_logits = flat_train_logits[mask_idx]
+    filtered_flat_targets = flat_targets[mask_idx]
+
+    train_loss = torch.nn.functional.cross_entropy(
+        filtered_flat_train_logits, filtered_flat_targets, reduction="none"
+    )
+    eval_loss = torch.nn.functional.cross_entropy(
+        filtered_flat_eval_logits, filtered_flat_targets, reduction="none"
+    )
+
+    eval_accuracy = (
+        (filtered_flat_eval_logits.argmax(-1) == filtered_flat_targets)
+        .float()
+        .mean()
+        .item()
+    )
+    train_accuracy = (
+        (filtered_flat_train_logits.argmax(-1) == filtered_flat_targets)
+        .float()
+        .mean()
+        .item()
+    )
+
+    model.train()
     return train_attentions, eval_attentions
 
 
 def main():
-    cfg, model = load_dir(Path("models/fixing_mask_simple_sparse"))
+    cfg, model = load_dir(Path("models/synth_hydra_knowing_lr_1e-3_vocab_256_learned_pos_k_2"))
     run_thing(cfg, model)
 
 
@@ -152,14 +220,21 @@ def plot_attentions_over_time(dip: Path):
             filename=dip / f"eval_attentions_{i}",
             title=f"Validation attention at step {i}",
         )
-        i += 1
+        i += 10
         model_name = f"checkpoint_{i}_model.pt"
     make_gif(dip)
 
 
+def find_anomaly(cfg, model):
+    i = 0
+    while True:
+        i += 1
+        if i % 100 == 0:
+            print(f"Attempt {i}")
+        d = run_thing_dict(cfg, model)
+        if d["train_loss"].max() > 0.3:
+            breakpoint()
+
+
 if __name__ == "__main__":
-    cfg, model = load_dir(Path('models/synth_hydra_knowing_vocab_256_learned_pos_0_ngadditional_1_k'))
-    run_thing(cfg, model)
-    plot_attentions_over_time(
-        Path("models/synth_hydra_knowing_vocab_256_learned_pos_0_ngadditional_1_k")
-    )
+    main()

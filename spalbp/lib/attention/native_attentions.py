@@ -55,6 +55,7 @@ class MultiHeadAttention(nn.Module):
         self.heads = nn.ModuleList(
             [_Head(head_size, n_embd, block_size) for _ in range(num_heads)]
         )
+        self.n_heads = num_heads
         self.proj = nn.Linear(head_size * num_heads, n_embd)
         self.dropout = nn.Dropout(dropout)
 
@@ -109,7 +110,7 @@ class EasySlidingWindowAttention2(nn.Module):
 
     def __init__(self, heads, emb, window_size):
         super().__init__()
-        self.heads = heads
+        self.n_heads = heads
         self.emb = emb
         self.window_size = window_size
         self.head_size = emb // heads
@@ -128,13 +129,13 @@ class EasySlidingWindowAttention2(nn.Module):
     def forward(self, x: Tensor, attn_mask: Tensor, output_attentions: bool = False):
         b, c, e = x.shape
         keys = (
-            self.to_keys(x).view(b, c, self.heads, self.head_size).transpose(1, 2)
+            self.to_keys(x).view(b, c, self.n_heads, self.head_size).transpose(1, 2)
         )  # (b, h, c, hs)
         queries = (
-            self.to_queries(x).view(b, c, self.heads, self.head_size).transpose(1, 2)
+            self.to_queries(x).view(b, c, self.n_heads, self.head_size).transpose(1, 2)
         )  # (b, h, c, hs)
         values = (
-            self.to_values(x).view(b, c, self.heads, self.head_size).transpose(1, 2)
+            self.to_values(x).view(b, c, self.n_heads, self.head_size).transpose(1, 2)
         )  # (b, h, c, hs)
         attended = self.local_attention(
             queries, keys, values, attn_mask[:, 0, :].bool()
