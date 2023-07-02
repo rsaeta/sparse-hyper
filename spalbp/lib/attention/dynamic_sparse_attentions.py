@@ -166,6 +166,10 @@ class _OneDimensionalSparseAttention(nn.Module):
         return new_out
 
 
+def logit(X):
+    return torch.log(X / (1 - X))
+
+
 class NonadaptiveSparseAttention(_OneDimensionalSparseAttention):
     @classmethod
     def from_config(cls, config: NonAdaptiveSparseAttentionConfig):
@@ -185,15 +189,20 @@ class NonadaptiveSparseAttention(_OneDimensionalSparseAttention):
         )
 
     @staticmethod
-    def _init_means(context: int, k: int, means_init_method: str):
+    def _init_means(context: int, k: int, means_init_method: str, activation: str):
         if means_init_method == "random":
             means = torch.rand((context, k, 1)) * 2 - 1
+            if activation == "sigmoid":
+                means = means * 6
         elif means_init_method == "uniform":
             means = (
                 torch.linspace(0, context - 1, k + 2)[None, 1:-1, None]
                 .expand(context, k, 1)
                 .clone()
             )
+            if activation == "sigmoid":
+                means = means / context
+                means = logit(means)
         else:
             raise ValueError(
                 f"Unknown means initialization method: {means_init_method}"
@@ -226,7 +235,7 @@ class NonadaptiveSparseAttention(_OneDimensionalSparseAttention):
             bias_kv=bias_kv,
             densities_buffer=densities_buffer,
         )
-        means = self._init_means(context_len, k, means_init_method)
+        means = self._init_means(context_len, k, means_init_method, transformation_method)
         self.pmeans = torch.nn.Parameter(means)
         self.psigmas = torch.nn.Parameter(torch.rand((context_len, k)))
         # Non-learnabe
