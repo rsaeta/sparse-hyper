@@ -220,7 +220,7 @@ def plot_attentions_over_time(dip: Path):
             filename=dip / f"eval_attentions_{i}",
             title=f"Validation attention at step {i}",
         )
-        i += 10
+        i += 1
         model_name = f"checkpoint_{i}_model.pt"
     make_gif(dip)
 

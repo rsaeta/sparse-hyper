@@ -1,0 +1,3 @@
+defaults:
+  - base_t_block
+  - override attention: simple_sparse
