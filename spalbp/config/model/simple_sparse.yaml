@@ -8,5 +8,5 @@ name: ${model.type}_${model.t_blocks[0].attention.attention_type}
 type: transformer
 embedding_dim: 64
 context_size: ${experiment.context_size}
-positional_encoding_type: sinusoidal
+positional_encoding_type: learned
 vocab_size: ${experiment.num_classes}

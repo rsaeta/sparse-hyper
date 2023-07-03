@@ -6,4 +6,4 @@ dropout: 0.0
 depth: 1
 context: ${experiment.context_size}
 vocab: ${experiment.num_classes}
-pos_embedding: sinusoidal
+pos_embedding: learned

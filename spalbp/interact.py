@@ -5,6 +5,7 @@ from pathlib import Path
 from omegaconf import OmegaConf
 from lib.models import GeneratingTransformer
 from synthetic_mask import random_sample_data2
+from synthetic_mask_all import random_sample_data
 from plot_utils import quickplot, make_gif
 from utils import find_latest_model, get_model
 
@@ -76,15 +77,19 @@ def get_attentions(model, seqs_inputs, attention_masks):
     return layers_attentions
 
 
-def run_thing_dict(cfg: OmegaConf, model):
-    sample = random_sample_data2(
+def run_thing_dict(cfg: OmegaConf, model, sample_method=random_sample_data2):
+    sample = sample_method(
         10,
         cfg.experiment.context_size,
         5,
         cfg.experiment.num_classes,
         cfg.experiment.offset,
     )
-    seqs_inputs, attention_masks, targets, mask = map(lambda x: x.to("cuda"), sample)
+    if len(sample) == 4:
+        seqs_inputs, attention_masks, targets, mask = map(lambda x: x.to("cuda"), sample)
+    else:
+        seqs_inputs, attention_masks, targets = map(lambda x: x.to("cuda"), sample)
+        mask = torch.zeros_like(seqs_inputs)
     model.eval()
     eval_logits, _ = model(seqs_inputs, attention_masks)
     eval_attentions = get_attentions(model, seqs_inputs, attention_masks)
@@ -207,9 +212,12 @@ def plot_attentions_over_time(dip: Path):
     cfg = load_config(dip)
     i = 0
     model_name = f"checkpoint_{i}_model.pt"
+    sample_method = random_sample_data if "_all_" in cfg.experiment.save_dir else random_sample_data2
     while os.path.exists(dip / model_name):
         model = load_model(cfg, dip, model_name)
-        train_attentions, eval_attentions = run_thing(cfg, model)
+        d = run_thing_dict(cfg, model, sample_method=sample_method)
+        train_attentions = d["train_attentions"].cpu()
+        eval_attentions = d["eval_attentions"].cpu()
         quickplot(
             train_attentions[-1].mean(dim=1)[0],
             filename=dip / f"train_attentions_{i}",
