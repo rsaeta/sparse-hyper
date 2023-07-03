@@ -117,7 +117,7 @@ class _OneDimensionalSparseAttention(nn.Module):
             torch.bool
         )  # (B, C, P) boolean mask of duplicates all-but-one
         densities[duplicates, :] = 0  # Removes all duplicates
-        # Normalize densities across all K probability distributions by summing
+        # Normalize densities across all P points for each K distribution
         densities = densities / (
             densities.sum(dim=-2, keepdim=True) + self.densities_buffer
         )  # (B, H, C, P, self.k)
