@@ -213,7 +213,11 @@ def plot_attentions_over_time(dip: Path):
     i = 0
     model_name = f"checkpoint_{i}_model.pt"
     sample_method = random_sample_data if "_all_" in cfg.experiment.save_dir else random_sample_data2
+    iternum = 1
     while os.path.exists(dip / model_name):
+        if os.path.exists(dip / f"train_attentions_{i}.png"):
+            i += iternum
+            continue
         model = load_model(cfg, dip, model_name)
         d = run_thing_dict(cfg, model, sample_method=sample_method)
         train_attentions = d["train_attentions"].cpu()
@@ -228,7 +232,7 @@ def plot_attentions_over_time(dip: Path):
             filename=dip / f"eval_attentions_{i}",
             title=f"Validation attention at step {i}",
         )
-        i += 1
+        i += iternum
         model_name = f"checkpoint_{i}_model.pt"
     make_gif(dip)
 
