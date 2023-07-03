@@ -1,8 +1,8 @@
-batch_size: 4
+batch_size: 16
 num_batches: 10_000_000
 grad_clipping_value: 1.0
 validation_every: 1000
 log_every: 100
-save_every: 1000
+save_every: 10000
 save_last: yes
 num_epochs: 1
