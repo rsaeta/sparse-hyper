@@ -119,7 +119,7 @@ class _OneDimensionalSparseAttention(nn.Module):
         densities[duplicates, :] = 0  # Removes all duplicates
         # Normalize densities across all K probability distributions by summing
         densities = densities / (
-            densities.sum(dim=2, keepdim=True) + self.densities_buffer
+            densities.sum(dim=-2, keepdim=True) + self.densities_buffer
         )  # (B, H, C, P, self.k)
 
         weights = values[:, :, :, None, :].expand_as(densities)  # (B, H, C, P, self.k)
@@ -193,7 +193,7 @@ class NonadaptiveSparseAttention(_OneDimensionalSparseAttention):
         if means_init_method == "random":
             means = torch.rand((context, k, 1)) * 2 - 1
             if activation == "sigmoid":
-                means = means * 6
+                means = means * 2
         elif means_init_method == "uniform":
             means = (
                 torch.linspace(0, context - 1, k + 2)[None, 1:-1, None]
