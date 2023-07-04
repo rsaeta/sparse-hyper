@@ -208,6 +208,21 @@ def main():
     run_thing(cfg, model)
 
 
+def get_sigmas(dip: Path):
+    cfg = load_config(dip)
+    i = 0
+    model_name = f"checkpoint_{i}_model.pt"
+    sigmas_per_models = []
+    iternum = 1
+    while os.path.exists(dip / model_name):
+        model = load_model(cfg, dip, model_name)
+        sigs = model.t_blocks[0].attend.psigmas
+        sigmas_per_models.append(sigs[None])
+        i += iternum
+        model_name = f"checkpoint_{i}_model.pt"
+    return torch.cat(sigmas_per_models)
+
+
 def plot_attentions_over_time(dip: Path):
     cfg = load_config(dip)
     i = 0
@@ -249,4 +264,6 @@ def find_anomaly(cfg, model):
 
 
 if __name__ == "__main__":
+    sigmas = get_sigmas(Path("models/synth_mask_all_simple_sparse_2_k_learned_pos_fix_densities_sum"))
+    breakpoint()
     main()
