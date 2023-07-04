@@ -51,6 +51,11 @@ class NonAdaptiveSparseAttentionConfig(_OneDSparseAttention):
 
 
 @dataclass
+class KnowingSparseAttentionConfig(NonAdaptiveSparseAttentionConfig):
+    learn_means: bool
+
+
+@dataclass
 class AdaptiveSparseAttentionConfig(_OneDSparseAttention):
     hyper_hidden_dim: int
 
