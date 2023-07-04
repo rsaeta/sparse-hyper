@@ -8,6 +8,7 @@ from sparse import util
 from spalbp.lib.attention.config import (
     AdaptiveSparseAttentionConfig,
     NonAdaptiveSparseAttentionConfig,
+    KnowingSparseAttentionConfig,
 )
 
 
@@ -296,7 +297,7 @@ class UnknowingSparseAttention(_OneDimensionalSparseAttention):
 
 class KnowingSparseAttention(_OneDimensionalSparseAttention):
     @classmethod
-    def from_config(cls, config: NonAdaptiveSparseAttentionConfig):
+    def from_config(cls, config: KnowingSparseAttentionConfig):
         return cls(
             config.emb,
             config.context,
@@ -306,6 +307,7 @@ class KnowingSparseAttention(_OneDimensionalSparseAttention):
             sigma_scale=config.sigma_scale,
             k=config.k,
             transformation_method=config.transformation_method,
+            learn_means=config.learn_means
         )
 
     def __init__(
@@ -319,6 +321,7 @@ class KnowingSparseAttention(_OneDimensionalSparseAttention):
         sigma_scale: float = 1.0,
         k: int = 1,
         transformation_method: str = "modulo",
+        learn_means: bool = False,
     ):
         super().__init__(
             emb, n_heads, k=k, gadditional=gadditional, nadditional=nadditional
@@ -330,6 +333,8 @@ class KnowingSparseAttention(_OneDimensionalSparseAttention):
             0, context_len, (n_heads, context_len, k, 1), device="cuda"
         ).float()
         self.pmeans[0, :, 0, :] = answers[:, None]
+        if learn_means:
+            self.pmeans = torch.nn.Parameter(self.pmeans)  # initialize to right value, but learnable
         self.psigmas = torch.nn.Parameter(torch.rand((n_heads, context_len, k)))
         # Non-learnabe
         self.register_buffer("pvalues", torch.ones(k))

@@ -23,7 +23,7 @@ type_to_classes = {
     "dense": (config.MultiHeadAttentionConfig, MultiHeadAttention),
     "native": (config.MultiHeadAttentionConfig, NativeAttention),
     "sparse": (config.AdaptiveSparseAttentionConfig, SparseSelfAttention),
-    "knowing": (config.NonAdaptiveSparseAttentionConfig, KnowingSparseAttention),
+    "knowing": (config.KnowingSparseAttentionConfig, KnowingSparseAttention),
     "unknowing": (config.NonAdaptiveSparseAttentionConfig, UnknowingSparseAttention),
     "simple_sparse": (
         config.NonAdaptiveSparseAttentionConfig,

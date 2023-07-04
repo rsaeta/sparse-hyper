@@ -4,3 +4,4 @@ attention_type: knowing
 transformation_method: modulo
 k: 2
 means_init_method: random
+learn_means: false
