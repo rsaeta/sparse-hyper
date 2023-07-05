@@ -192,17 +192,16 @@ class NonadaptiveSparseAttention(_OneDimensionalSparseAttention):
     @staticmethod
     def _init_means(context: int, k: int, means_init_method: str, activation: str):
         if means_init_method == "random":
-            means = torch.rand((context, k, 1)) * 2 - 1
+            means = torch.rand((context, k, 1))
             if activation == "sigmoid":
-                means = means * 2
+                means = means * 4 - 2
         elif means_init_method == "uniform":
             means = (
                 torch.linspace(0, context - 1, k + 2)[None, 1:-1, None]
                 .expand(context, k, 1)
                 .clone()
-            )
+            ) / context
             if activation == "sigmoid":
-                means = means / context
                 means = logit(means)
         else:
             raise ValueError(
@@ -236,7 +235,9 @@ class NonadaptiveSparseAttention(_OneDimensionalSparseAttention):
             bias_kv=bias_kv,
             densities_buffer=densities_buffer,
         )
-        means = self._init_means(context_len, k, means_init_method, transformation_method)
+        means = self._init_means(
+            context_len, k, means_init_method, transformation_method
+        )
         self.pmeans = torch.nn.Parameter(means)
         self.psigmas = torch.nn.Parameter(torch.rand((context_len, k)))
         # Non-learnabe
@@ -250,7 +251,8 @@ class NonadaptiveSparseAttention(_OneDimensionalSparseAttention):
         means = self.pmeans[None, None, :, :, :].expand(b, self.n_heads, c, k, 1)
         sigmas = self.psigmas[None, None, :, :].expand(b, self.n_heads, c, k)
         values = self.pvalues[None, None, None, :].expand(b, self.n_heads, c, k)
-
+        if self.transformation_method == "modulo":
+            means = means * c
         means = sparse.transform_means(means, (c,), method=self.transformation_method)
         sigmas = sparse.transform_sigmas(sigmas, (c,)) * self.sigma_scale
 
@@ -307,7 +309,7 @@ class KnowingSparseAttention(_OneDimensionalSparseAttention):
             sigma_scale=config.sigma_scale,
             k=config.k,
             transformation_method=config.transformation_method,
-            learn_means=config.learn_means
+            learn_means=config.learn_means,
         )
 
     def __init__(
@@ -334,7 +336,9 @@ class KnowingSparseAttention(_OneDimensionalSparseAttention):
         ).float()
         self.pmeans[0, :, 0, :] = answers[:, None]
         if learn_means:
-            self.pmeans = torch.nn.Parameter(self.pmeans)  # initialize to right value, but learnable
+            self.pmeans = torch.nn.Parameter(
+                self.pmeans
+            )  # initialize to right value, but learnable
         self.psigmas = torch.nn.Parameter(torch.rand((n_heads, context_len, k)))
         # Non-learnabe
         self.register_buffer("pvalues", torch.ones(k))
