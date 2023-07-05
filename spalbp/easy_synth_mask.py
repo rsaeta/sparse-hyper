@@ -52,7 +52,7 @@ def _train(cfg: RunConfig):
     train_cfg = cfg.experiment.training
     if cfg.experiment.watch_model:
         wandb.watch(model)
-        
+
 
     for i in range(train_cfg.num_batches):
         model.train()
@@ -78,10 +78,13 @@ def _train(cfg: RunConfig):
             reduction="mean",
         )
         emb = model.embed(seqs_inputs)
-        means, _, _ = model.t_blocks[0].attend.hyper(emb)
+        means, sigmas, _ = model.t_blocks[0].attend.hyper(emb)
         mu_dict = {}
+        sigma_dict = {}
         for j, mu in enumerate(means[0, 0, 0, :, 0]):
             mu_dict[f"mu_{j}"] = mu.item()
+        for j, sigma in enumerate(sigmas[0, 0, 0, :, 0]):
+            sigma_dict[f"sigma_{j}"] = sigma.item()
         if i % train_cfg.log_every == 0:
             to_log = {
                 "loss": loss.item(),
