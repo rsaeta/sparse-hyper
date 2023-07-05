@@ -4,3 +4,4 @@ defaults:
 attention_type: sparse
 hyper_hidden_dim: 128
 remove_rand_on_eval: false
+hyper_hidden_depth: 1

@@ -45,12 +45,15 @@ def easy_sample(batch_size, seq_len, low, high, offset=70):
 
 def _train(cfg: RunConfig):
     model = get_model(cfg)
+    trained = False
     setup(cfg)
     optimizer, scheduler = learners(model, cfg)
     tokens_seen = 0
     train_cfg = cfg.experiment.training
     if cfg.experiment.watch_model:
         wandb.watch(model)
+
+    mus_overtime = []
 
     for i in range(train_cfg.num_batches):
         model.train()
@@ -70,20 +73,29 @@ def _train(cfg: RunConfig):
         flattened_logits = logits.view(-1, num_classes)
         flattened_targets = targets.view(-1)
         flat_mask_idx = (~mask).view(-1).nonzero().view(-1)
-        loss = F.cross_entropy(
-            flattened_logits[flat_mask_idx],
-            flattened_targets[flat_mask_idx],
+        loss = F.cross_entropy(flattened_logits[flat_mask_idx],flattened_targets[flat_mask_idx],
             reduction="mean",
         )
+        emb = model.embed(seqs_inputs)
+        means, _, _ = model.t_blocks[0].attend.hyper(emb)
+        mu_dict = {}
+        for j, mu in enumerate(means[0, 0, 0, :, 0]):
+            mu_dict[f"mu_{j}"] = mu.item()
         if i % train_cfg.log_every == 0:
             to_log = {
                 "loss": loss.item(),
                 "tokens_seen": tokens_seen,
                 "lr": scheduler.get_last_lr()[0],
+                **mu_dict,
             }
             if "WANDB_MODE" in os.environ:
                 print(to_log)
             wandb.log(to_log, step=i)
+        if not trained and loss.item() < 1e-3:
+            trained = True
+
+        if trained and loss.item() > 1.0:
+            breakpoint()
         loss = loss + aux_loss
         loss.backward()
         torch.nn.utils.clip_grad_norm_(

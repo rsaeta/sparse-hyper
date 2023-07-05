@@ -367,6 +367,7 @@ class SparseSelfAttention(_OneDimensionalSparseAttention):
             nadditional=config.nadditional,
             remove_rand_on_eval=config.remove_rand_on_eval,
             bias_kv=config.bias_kv,
+            hyper_hidden_depth=config.hyper_hidden_depth,
         )
 
     def __init__(
@@ -382,6 +383,7 @@ class SparseSelfAttention(_OneDimensionalSparseAttention):
         nadditional: int = 2,
         remove_rand_on_eval: bool = True,
         bias_kv: bool = False,
+        hyper_hidden_depth: int = 1,
     ):
         super().__init__(
             emb,
@@ -394,13 +396,14 @@ class SparseSelfAttention(_OneDimensionalSparseAttention):
             bias_kv=bias_kv,
         )
         self.context_len = context_len
+        layers = [nn.Linear(emb, hidden), nn.ReLU()]
+        for _ in range(hyper_hidden_depth):
+            layers.append(nn.Linear(hidden, hidden))
+            layers.append(nn.ReLU())
+
         self.to_param = nn.Sequential(
-            nn.Linear(emb, hidden),
-            nn.ReLU(),
-            #            nn.Linear(hidden, hidden),
-            #            nn.ReLU(),
+            *layers,
             nn.Linear(hidden, 2 * k * n_heads),  # One mean and one sigma per head
-            #            nn.Sigmoid(),
         )
 
     def hyper(self, x: Tensor) -> Tuple[Tensor, Tensor, Tensor]:
