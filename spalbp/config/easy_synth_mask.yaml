@@ -1,0 +1,3 @@
+defaults:
+  - config
+  - experiment: synth_easy
