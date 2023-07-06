@@ -53,7 +53,6 @@ def _train(cfg: RunConfig):
     if cfg.experiment.watch_model:
         wandb.watch(model)
 
-
     for i in range(train_cfg.num_batches):
         model.train()
         optimizer.zero_grad()
@@ -78,7 +77,9 @@ def _train(cfg: RunConfig):
             reduction="mean",
         )
         emb = model.embed(seqs_inputs)
-        means, sigmas, _ = model.t_blocks[0].attend.hyper(emb)
+        for t_block in model.t_blocks[:-1]:
+            emb, _ = t_block(emb, attention_masks)
+        means, sigmas, _ = model.t_blocks[-1].attend.hyper(emb)
         mu_dict = {}
         sigma_dict = {}
         for j, mu in enumerate(means[0, 0, 0, :, 0]):
@@ -91,6 +92,7 @@ def _train(cfg: RunConfig):
                 "tokens_seen": tokens_seen,
                 "lr": scheduler.get_last_lr()[0],
                 **mu_dict,
+                **sigma_dict,
             }
             if "WANDB_MODE" in os.environ:
                 print(to_log)
