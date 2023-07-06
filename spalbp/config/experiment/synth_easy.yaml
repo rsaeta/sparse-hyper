@@ -1,0 +1,11 @@
+defaults:
+  - base_experiment
+  - data: synthetic
+  - _self_
+
+type: simple_synthetic_mlm
+context_size: 256
+data_source: synthetic
+num_classes: 256
+wandb_project: sparse_transformer_synth_easy
+offset: 70

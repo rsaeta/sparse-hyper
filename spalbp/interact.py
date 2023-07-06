@@ -6,6 +6,7 @@ from omegaconf import OmegaConf
 from lib.models import GeneratingTransformer
 from synthetic_mask import random_sample_data2
 from synthetic_mask_all import random_sample_data
+from easy_synth_mask import easy_sample
 from plot_utils import quickplot, make_gif
 from utils import find_latest_model, get_model
 
@@ -86,7 +87,9 @@ def run_thing_dict(cfg: OmegaConf, model, sample_method=random_sample_data2):
         cfg.experiment.offset,
     )
     if len(sample) == 4:
-        seqs_inputs, attention_masks, targets, mask = map(lambda x: x.to("cuda"), sample)
+        seqs_inputs, attention_masks, targets, mask = map(
+            lambda x: x.to("cuda"), sample
+        )
     else:
         seqs_inputs, attention_masks, targets = map(lambda x: x.to("cuda"), sample)
         mask = torch.zeros_like(seqs_inputs)
@@ -150,6 +153,7 @@ def run_thing_dict(cfg: OmegaConf, model, sample_method=random_sample_data2):
         "train_accuracy": train_accuracy,
     }
 
+
 def run_thing(cfg: OmegaConf, model):
     sample = random_sample_data2(
         10,
@@ -204,7 +208,9 @@ def run_thing(cfg: OmegaConf, model):
 
 
 def main():
-    cfg, model = load_dir(Path("models/synth_hydra_knowing_lr_1e-3_vocab_256_learned_pos_k_2"))
+    cfg, model = load_dir(
+        Path("models/synth_hydra_knowing_lr_1e-3_vocab_256_learned_pos_k_2")
+    )
     run_thing(cfg, model)
 
 
@@ -227,7 +233,13 @@ def plot_attentions_over_time(dip: Path):
     cfg = load_config(dip)
     i = 0
     model_name = f"checkpoint_{i}_model.pt"
-    sample_method = random_sample_data if "_all_" in cfg.experiment.save_dir else random_sample_data2
+    sample_method = (
+        random_sample_data
+        if "_all_" in cfg.experiment.save_dir
+        else easy_sample
+        if "_easy_" in cfg.experiment.save_dir
+        else random_sample_data2
+    )
     iternum = 1
     while os.path.exists(dip / model_name):
         if os.path.exists(dip / f"train_attentions_{i}.png"):
@@ -264,6 +276,8 @@ def find_anomaly(cfg, model):
 
 
 if __name__ == "__main__":
-    sigmas = get_sigmas(Path("models/synth_mask_all_simple_sparse_2_k_learned_pos_fix_densities_sum"))
+    sigmas = get_sigmas(
+        Path("models/synth_mask_all_simple_sparse_2_k_learned_pos_fix_densities_sum")
+    )
     breakpoint()
     main()

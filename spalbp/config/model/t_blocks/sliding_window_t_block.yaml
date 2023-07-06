@@ -1,4 +1,4 @@
 defaults:
   - base_t_block
-  - override attention: simple_sparse
+  - override attention: sliding_window
 repeat: 1
