@@ -47,6 +47,19 @@ def get_instability_metric_df(df: pd.DataFrame, threshold=1e-3):
     return df.apply(get_instability_metric, threshold=threshold)
 
 
+def merge_mu_dfs(mu0: pd.DataFrame, mu1: pd.DataFrame):
+    """
+    Merges the dataframes of the mu's from the same run
+    """
+    real_cols = get_real_columns(mu0)
+    mu0 = mu0[real_cols]
+    real_cols = get_real_columns(mu1)
+    mu1 = mu1[real_cols]
+    return pd.concat([mu0, mu1], axis=1)
+
+
+
+
 if __name__ == '__main__':
     df = pd.read_csv('offset_200_loss.csv')
     f = get_first_drop_step_df(df)
